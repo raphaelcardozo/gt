@@ -1,0 +1,1171 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+<title>JabRef references</title>
+<meta http-equiv="Content-Type" content="text/html; charset=windows-1252">
+<script type="text/javascript">
+<!--
+// QuickSearch script for JabRef HTML export 
+// Version: 3.0
+//
+// Copyright (c) 2006-2011, Mark Schenk
+//
+// This software is distributed under a Creative Commons Attribution 3.0 License
+// http://creativecommons.org/licenses/by/3.0/
+//
+// Features:
+// - intuitive find-as-you-type searching
+//    ~ case insensitive
+//    ~ ignore diacritics (optional)
+//
+// - search with/without Regular Expressions
+// - match BibTeX key
+//
+
+// Search settings
+var searchAbstract = true;	// search in abstract
+var searchReview = true;	// search in review
+
+var noSquiggles = true; 	// ignore diacritics when searching
+var searchRegExp = false; 	// enable RegExp searches
+
+
+if (window.addEventListener) {
+	window.addEventListener("load",initSearch,false); }
+else if (window.attachEvent) {
+	window.attachEvent("onload", initSearch); }
+
+function initSearch() {
+	// check for quick search table and searchfield
+	if (!document.getElementById('qs_table')||!document.getElementById('quicksearch')) { return; }
+
+	// load all the rows and sort into arrays
+	loadTableData();
+	
+	//find the query field
+	qsfield = document.getElementById('qs_field');
+
+	// previous search term; used for speed optimisation
+	prevSearch = '';
+
+	//find statistics location
+	stats = document.getElementById('stat');
+	setStatistics(-1);
+	
+	// set up preferences
+	initPreferences();
+
+	// shows the searchfield
+	document.getElementById('quicksearch').style.display = 'block';
+	document.getElementById('qs_field').onkeyup = quickSearch;
+}
+
+function loadTableData() {
+	// find table and appropriate rows
+	searchTable = document.getElementById('qs_table');
+	var allRows = searchTable.getElementsByTagName('tbody')[0].getElementsByTagName('tr');
+
+	// split all rows into entryRows and infoRows (e.g. abstract, review, bibtex)
+	entryRows = new Array(); infoRows = new Array(); absRows = new Array(); revRows = new Array();
+
+	// get data from each row
+	entryRowsData = new Array(); absRowsData = new Array(); revRowsData = new Array(); 
+	
+	BibTeXKeys = new Array();
+	
+	for (var i=0, k=0, j=0; i<allRows.length;i++) {
+		if (allRows[i].className.match(/entry/)) {
+			entryRows[j] = allRows[i];
+			entryRowsData[j] = stripDiacritics(getTextContent(allRows[i]));
+			allRows[i].id ? BibTeXKeys[j] = allRows[i].id : allRows[i].id = 'autokey_'+j;
+			j ++;
+		} else {
+			infoRows[k++] = allRows[i];
+			// check for abstract/review
+			if (allRows[i].className.match(/abstract/)) {
+				absRows.push(allRows[i]);
+				absRowsData[j-1] = stripDiacritics(getTextContent(allRows[i]));
+			} else if (allRows[i].className.match(/review/)) {
+				revRows.push(allRows[i]);
+				revRowsData[j-1] = stripDiacritics(getTextContent(allRows[i]));
+			}
+		}
+	}
+	//number of entries and rows
+	numEntries = entryRows.length;
+	numInfo = infoRows.length;
+	numAbs = absRows.length;
+	numRev = revRows.length;
+}
+
+function quickSearch(){
+	
+	tInput = qsfield;
+
+	if (tInput.value.length == 0) {
+		showAll();
+		setStatistics(-1);
+		qsfield.className = '';
+		return;
+	} else {
+		t = stripDiacritics(tInput.value);
+
+		if(!searchRegExp) { t = escapeRegExp(t); }
+			
+		// only search for valid RegExp
+		try {
+			textRegExp = new RegExp(t,"i");
+			closeAllInfo();
+			qsfield.className = '';
+		}
+			catch(err) {
+			prevSearch = tInput.value;
+			qsfield.className = 'invalidsearch';
+			return;
+		}
+	}
+	
+	// count number of hits
+	var hits = 0;
+
+	// start looping through all entry rows
+	for (var i = 0; cRow = entryRows[i]; i++){
+
+		// only show search the cells if it isn't already hidden OR if the search term is getting shorter, then search all
+		if(cRow.className.indexOf('noshow')==-1 || tInput.value.length <= prevSearch.length){
+			var found = false; 
+
+			if (entryRowsData[i].search(textRegExp) != -1 || BibTeXKeys[i].search(textRegExp) != -1){ 
+				found = true;
+			} else {
+				if(searchAbstract && absRowsData[i]!=undefined) {
+					if (absRowsData[i].search(textRegExp) != -1){ found=true; } 
+				}
+				if(searchReview && revRowsData[i]!=undefined) {
+					if (revRowsData[i].search(textRegExp) != -1){ found=true; } 
+				}
+			}
+			
+			if (found){
+				cRow.className = 'entry show';
+				hits++;
+			} else {
+				cRow.className = 'entry noshow';
+			}
+		}
+	}
+
+	// update statistics
+	setStatistics(hits)
+	
+	// set previous search value
+	prevSearch = tInput.value;
+}
+
+
+// Strip Diacritics from text
+// http://stackoverflow.com/questions/990904/javascript-remove-accents-in-strings
+
+// String containing replacement characters for stripping accents 
+var stripstring = 
+    'AAAAAAACEEEEIIII'+
+    'DNOOOOO.OUUUUY..'+
+    'aaaaaaaceeeeiiii'+
+    'dnooooo.ouuuuy.y'+
+    'AaAaAaCcCcCcCcDd'+
+    'DdEeEeEeEeEeGgGg'+
+    'GgGgHhHhIiIiIiIi'+
+    'IiIiJjKkkLlLlLlL'+
+    'lJlNnNnNnnNnOoOo'+
+    'OoOoRrRrRrSsSsSs'+
+    'SsTtTtTtUuUuUuUu'+
+    'UuUuWwYyYZzZzZz.';
+
+function stripDiacritics(str){
+
+    if(noSquiggles==false){
+        return str;
+    }
+
+    var answer='';
+    for(var i=0;i<str.length;i++){
+        var ch=str[i];
+        var chindex=ch.charCodeAt(0)-192;   // Index of character code in the strip string
+        if(chindex>=0 && chindex<stripstring.length){
+            // Character is within our table, so we can strip the accent...
+            var outch=stripstring.charAt(chindex);
+            // ...unless it was shown as a '.'
+            if(outch!='.')ch=outch;
+        }
+        answer+=ch;
+    }
+    return answer;
+}
+
+// http://stackoverflow.com/questions/3446170/escape-string-for-use-in-javascript-regex
+// NOTE: must escape every \ in the export code because of the JabRef Export...
+function escapeRegExp(str) {
+  return str.replace(/[-\[\]\/\{\}\(\)\*\+\?\.\\\^\$\|]/g, "\\$&");
+}
+
+function toggleInfo(articleid,info) {
+
+	var entry = document.getElementById(articleid);
+	var abs = document.getElementById('abs_'+articleid);
+	var rev = document.getElementById('rev_'+articleid);
+	var bib = document.getElementById('bib_'+articleid);
+	
+	if (abs && info == 'abstract') {
+		abs.className.indexOf('noshow') == -1?abs.className = 'abstract noshow':abs.className = 'abstract show';
+	} else if (rev && info == 'review') {
+		rev.className.indexOf('noshow') == -1?rev.className = 'review noshow':rev.className = 'review show';
+	} else if (bib && info == 'bibtex') {
+		bib.className.indexOf('noshow') == -1?bib.className = 'bibtex noshow':bib.className = 'bibtex show';
+	} else { 
+		return;
+	}
+
+	// check if one or the other is available
+	var revshow; var absshow; var bibshow;
+	(abs && abs.className.indexOf('noshow') == -1)? absshow = true: absshow = false;
+	(rev && rev.className.indexOf('noshow') == -1)? revshow = true: revshow = false;	
+	(bib && bib.className.indexOf('noshow') == -1)? bibshow = true: bibshow = false;
+	
+	// highlight original entry
+	if(entry) {
+		if (revshow || absshow || bibshow) {
+		entry.className = 'entry highlight show';
+		} else {
+		entry.className = 'entry show';
+		}
+	}
+	
+	// When there's a combination of abstract/review/bibtex showing, need to add class for correct styling
+	if(absshow) {
+		(revshow||bibshow)?abs.className = 'abstract nextshow':abs.className = 'abstract';
+	} 
+	if (revshow) {
+		bibshow?rev.className = 'review nextshow': rev.className = 'review';
+	}	
+	
+}
+
+function setStatistics (hits) {
+	if(hits < 0) { hits=numEntries; }
+	if(stats) { stats.firstChild.data = hits + '/' + numEntries}
+}
+
+function getTextContent(node) {
+	// Function written by Arve Bersvendsen
+	// http://www.virtuelvis.com
+	
+	if (node.nodeType == 3) {
+	return node.nodeValue;
+	} // text node
+	if (node.nodeType == 1 && node.className != "infolinks") { // element node
+	var text = [];
+	for (var chld = node.firstChild;chld;chld=chld.nextSibling) {
+		text.push(getTextContent(chld));
+	}
+	return text.join("");
+	} return ""; // some other node, won't contain text nodes.
+}
+
+function showAll(){
+	closeAllInfo();
+	for (var i = 0; i < numEntries; i++){ entryRows[i].className = 'entry show'; }
+}
+
+function closeAllInfo(){
+	for (var i=0; i < numInfo; i++){
+		if (infoRows[i].className.indexOf('noshow') ==-1) {
+			infoRows[i].className = infoRows[i].className + ' noshow';
+		}
+	}
+}
+
+function clearQS() {
+	qsfield.value = '';
+	showAll();
+}
+
+function redoQS(){
+	showAll();
+	quickSearch(qsfield);
+}
+
+function updateSetting(obj){
+	var option = obj.id;
+	var checked = obj.value;
+
+	switch(option)
+	 {
+	 case "opt_searchAbs":
+	   searchAbstract=!searchAbstract;
+	   redoQS();
+	   break;
+	 case "opt_searchRev":
+	   searchReview=!searchReview;
+	   redoQS();
+	   break;
+	 case "opt_useRegExp":
+	   searchRegExp=!searchRegExp;
+	   redoQS();
+	   break;
+	 case "opt_noAccents":
+	   noSquiggles=!noSquiggles;
+	   loadTableData();
+	   redoQS();
+	   break;
+	 }
+}
+
+function initPreferences(){
+	if(searchAbstract){document.getElementById("opt_searchAbs").checked = true;}
+	if(searchReview){document.getElementById("opt_searchRev").checked = true;}
+	if(noSquiggles){document.getElementById("opt_noAccents").checked = true;}
+	if(searchRegExp){document.getElementById("opt_useRegExp").checked = true;}
+	
+	if(numAbs==0) {document.getElementById("opt_searchAbs").parentNode.style.display = 'none';}
+	if(numRev==0) {document.getElementById("opt_searchRev").parentNode.style.display = 'none';}	
+}
+
+function toggleSettings(){
+	var togglebutton = document.getElementById('showsettings');
+	var settings = document.getElementById('settings');
+	
+	if(settings.className == "hidden"){
+		settings.className = "show";
+		togglebutton.innerText = "close settings";
+		togglebutton.textContent = "close settings";
+	}else{
+		settings.className = "hidden";
+		togglebutton.innerText = "settings...";		
+		togglebutton.textContent = "settings...";
+	}
+}
+
+-->
+</script>
+<style type="text/css">
+body { background-color: white; font-family: Arial, sans-serif; font-size: 13px; line-height: 1.2; padding: 1em; color: #2E2E2E; width: 50em; margin: auto auto; }
+
+form#quicksearch { width: auto; border-style: solid; border-color: gray; border-width: 1px 0px; padding: 0.7em 0.5em; display:none; position:relative; }
+span#searchstat {padding-left: 1em;}
+
+div#settings { margin-top:0.7em; /* border-bottom: 1px transparent solid; background-color: #efefef; border: 1px grey solid; */ }
+div#settings ul {margin: 0; padding: 0; }
+div#settings li {margin: 0; padding: 0 1em 0 0; display: inline; list-style: none; }
+div#settings li + li { border-left: 2px #efefef solid; padding-left: 0.5em;}
+div#settings input { margin-bottom: 0px;}
+
+div#settings.hidden {display:none;}
+
+#showsettings { border: 1px grey solid; padding: 0 0.5em; float:right; line-height: 1.6em; text-align: right; }
+#showsettings:hover { cursor: pointer; }
+
+.invalidsearch { background-color: red; }
+input[type="button"] { background-color: #efefef; border: 1px #2E2E2E solid;}
+
+table { border: 1px gray none; width: 100%; empty-cells: show; border-spacing: 0em 0.1em; margin: 1em 0em; }
+th, td { border: none; padding: 0.5em; vertical-align: top; text-align: justify; }
+
+td a { color: navy; text-decoration: none; }
+td a:hover  { text-decoration: underline; }
+
+tr.noshow { display: none;}
+tr.highlight td { background-color: #EFEFEF; border-top: 2px #2E2E2E solid; font-weight: bold; }
+tr.abstract td, tr.review td, tr.bibtex td { background-color: #EFEFEF; text-align: justify; border-bottom: 2px #2E2E2E solid; }
+tr.nextshow td { border-bottom-style: none; }
+
+tr.bibtex pre { width: 100%; overflow: auto; white-space: pre-wrap;}
+p.infolinks { margin: 0.3em 0em 0em 0em; padding: 0px; }
+
+@media print {
+	p.infolinks, #qs_settings, #quicksearch, t.bibtex { display: none !important; }
+	tr { page-break-inside: avoid; }
+}
+</style>
+</head>
+<body>
+
+<form action="" id="quicksearch">
+<input type="text" id="qs_field" autocomplete="off" placeholder="Type to search..." /> <input type="button" onclick="clearQS()" value="clear" />
+<span id="searchstat">Matching entries: <span id="stat">0</span></span>
+<div id="showsettings" onclick="toggleSettings()">settings...</div>
+<div id="settings" class="hidden">
+<ul>
+<li><input type="checkbox" class="search_setting" id="opt_searchAbs" onchange="updateSetting(this)"><label for="opt_searchAbs"> include abstract</label></li>
+<li><input type="checkbox" class="search_setting" id="opt_searchRev" onchange="updateSetting(this)"><label for="opt_searchRev"> include review</label></li>
+<li><input type="checkbox" class="search_setting" id="opt_useRegExp" onchange="updateSetting(this)"><label for="opt_useRegExp"> use RegExp</label></li>
+<li><input type="checkbox" class="search_setting" id="opt_noAccents" onchange="updateSetting(this)"><label for="opt_noAccents"> ignore accents</label></li>
+</ul>
+</div>
+</form>
+<table id="qs_table" border="1">
+<tbody>
+<tr id="Barra2017" class="entry">
+	<td>Barra VL (2017), <i>"Espaço Físico da Escola Pública Goiana de Tempo Integral: dados e apontamentos"</i>, Educação &amp; Realidade., September, 2017.  Vol. 42(3), pp. 1081-1101. Universidade Federal do Rio Grande do Sul.
+	<p class="infolinks">[<a href="javascript:toggleInfo('Barra2017','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('Barra2017','bibtex')">BibTeX</a>] [<a href="https://doaj.org/article/830977c1cf83497cb834f3d30eceffe8" target="_blank">URL</a>]</p>
+	</td>
+</tr>
+<tr id="abs_Barra2017" class="abstract noshow">
+	<td><b>Abstract</b>: <p>A ampliação da jornada escolar nas redes públicas de educação é apreendida em dados construídos a partir de base empírica advinda de pesquisa tipo survey realizada no estado de Goiás. O foco temático é o espaço físico que sedia a escola goiana de tempo integral, com recorte sobre os Anos Iniciais do Ensino Fundamental. Portanto os dados postos à análise se interessam pela escola cuja jornada foi ampliada e pretende pensá-la a partir de aspectos como: a) locais dentro e fora da escola onde são realizadas as atividades; b) cronologia de edificação dos prédios escolares onde estas escolas funcionam; c) ambientes escolares que receberam reformas ou adaptações; d) ambientes escolares que requerem reformas; e) ambientes escolares que precisam ser construídos.</p></td>
+</tr>
+<tr id="bib_Barra2017" class="bibtex noshow">
+<td><b>BibTeX</b>:
+<pre>
+@article{Barra2017,
+  author = {Valdeniza Lopes Barra},
+  title = {Espaço Físico da Escola Pública Goiana de Tempo Integral: dados e apontamentos},
+  journal = {Educação &amp; Realidade},
+  publisher = {Universidade Federal do Rio Grande do Sul},
+  year = {2017},
+  volume = {42},
+  number = {3},
+  pages = {1081--1101},
+  url = {https://doaj.org/article/830977c1cf83497cb834f3d30eceffe8}
+}
+</pre></td>
+</tr>
+<tr id="BORGES2014" class="entry">
+	<td>BORGES JR (2014), <i>"LEVANTAMENTO DA SITUAÇÃO ESCOLAR EM SISTEMAS MUNICIPAIS DE ENSINO DO RIO GRANDE DO SUL: UMA DETERMINAÇÃO POLÍTICA DE FINANCIAMENTO DO ENSINO PÚBLICO E/OU FERRAMENTA DE GESTÃO?"</i>. Thesis at: UNIVERSIDADE DO VALE DO RIO DOS SINOS. 
+	<p class="infolinks">[<a href="javascript:toggleInfo('BORGES2014','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('BORGES2014','bibtex')">BibTeX</a>] [<a href="https://sucupira.capes.gov.br/sucupira/public/consultas/coleta/trabalhoConclusao/viewTrabalhoConclusao.jsf?popup=true&id_trabalho=1544736" target="_blank">URL</a>]</p>
+	</td>
+</tr>
+<tr id="abs_BORGES2014" class="abstract noshow">
+	<td><b>Abstract</b>: Esta pesquisa está situada no campo das políticas educacionais e desenvolve um conhecimento a respeito das políticas de avaliação da educação básica, com foco na infraestrutura escolar. Especificamente, trata do sistema de Levantamento da Situação Escolar (LSE) como uma ferramenta desenvolvida pelo FNDE/MEC para diagnosticar as condições de funcionamento das escolas das redes públicas e a posterior identificação dos seus indicadores de infraestrutura frente aos Padrões Mínimos de Funcionamento da Escola (PMFE). O objetivo geral do estudo foi analisar o processo de LSE nos sistemas municipais de ensino do Rio Grande do Sul e suas descontinuidades, a partir da metodologia de diagnóstico desenvolvida pelo FNDE, com perspectivas em problematizar a questão da determinação política e/ou ferramenta de gestão. Para tanto, desenvolveu-se os seguintes objetivos específicos: discutir a adesão ao LSE e as estratégias locais para dar conta da sua realização; identificar a realidade escolar ou as condições de funcionamento de escolas municipais através da pontuação obtida no LSE frente aos PMFE; analisar a interação entre as condições de funcionamento das escolas e o IDEB; e descrever os encaminhamentos de gestão vinculados ao LSE e ao Plano de Ações Articuladas. Para subsidiar essa investigação foram realizados estudos nas legislações relacionadas à área da educação e nos documentos oficiais que tratam do LSE, como o formulário do diagnóstico escolar, os manuais de orientação, os relatórios de consultores do FNDE, entre outros. Também foram realizadas consultas eletrônicas ao FNDE/MEC e entrevistas semiestruturadas com os gestores municipais e escolares. A abordagem da questão da infraestrutura escolar foi desenvolvida em um campo empírico que reuniu sete municípios gaúchos e dezessete escolas municipais, caracterizando-se um estudo de casos múltiplos. Entretanto, apresenta-se também um panorama nacional das ações de capacitação e de implementação da política nos entes federativos municipais e estaduais. O estudo revelou um processo de descontinuidade pela ruptura de uma política em implantação e o consequente desperdício de recursos públicos, além da insatisfação dos gestores locais pelo esforço empreendido, não obtenção dos resultados do diagnóstico e não implementação de melhorias para qualificar suas redes de ensino motivado pela falta de regime de colaboração com a União. Portanto, a política do LSE não se efetivou como uma determinação legal e tampouco como uma ferramenta de gestão.</td>
+</tr>
+<tr id="bib_BORGES2014" class="bibtex noshow">
+<td><b>BibTeX</b>:
+<pre>
+@phdthesis{BORGES2014,
+  author = {JESUS ROSEMAR BORGES},
+  title = {LEVANTAMENTO DA SITUAÇÃO ESCOLAR EM SISTEMAS MUNICIPAIS DE ENSINO DO RIO GRANDE DO SUL: UMA DETERMINAÇÃO POLÍTICA DE FINANCIAMENTO DO ENSINO PÚBLICO E/OU FERRAMENTA DE GESTÃO?},
+  school = {UNIVERSIDADE DO VALE DO RIO DOS SINOS},
+  year = {2014},
+  url = {https://sucupira.capes.gov.br/sucupira/public/consultas/coleta/trabalhoConclusao/viewTrabalhoConclusao.jsf?popup=true&amp;id_trabalho=1544736}
+}
+</pre></td>
+</tr>
+<tr id="Campos2009" class="entry">
+	<td>Campos BC and Andrade Cruz BdP (2009), <i>"Impacts of the Fundeb on the quality of public basic education: an analysis for the municipalities of the state of Rio de Janeiro/Impactos do Fundeb sobre a qualidade do ensino basico publico: uma analise para os municipios do estado do Rio de Janeiro"</i>, Revista de Administracao Publica-RAP., March, 2009.  Vol. 43(2) Fundacao Getulio Vargas.
+	<p class="infolinks">[<a href="javascript:toggleInfo('Campos2009','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('Campos2009','bibtex')">BibTeX</a>]</p>
+	</td>
+</tr>
+<tr id="abs_Campos2009" class="abstract noshow">
+	<td><b>Abstract</b>: Regulated in 2006, the Fund for Basic Education and for Enhancing the Value of the Teaching Profession (Fundeb) represents a step further in financing Brazilian public education. By securing a considerable part of the revenues for basic education in all its modalities, the fund can contribute to the reduction of illiteracy and the universality of basic education (from elementary to middle school), among other benefits. However, the policy of securing financing by itself is not enough to mitigate all Brazilian public education issues. This article shows that there does not seem to exist a statistically significant co-relation between the amount of resources available for investment in public education and its degree of development. From a statistical exercise developed for the municipalities of the state of Rio de Janeiro, one can see that Fundeb does not ensure a larger financial allocation for the most underserviced municipalities from the education standpoint. Furthermore, although the allocation of resources is necessary, it is not enough to improve the Brazilian public education. The good use of resources from the fund is the key to success. Summary: 1. Introduction; 2. Log-lin estimation method; 3. Educational development in Rio de Janeiro municipalities and Fundeb's revenues; 4. Fudeb and school infrastructure in the state of Rio de Janeiro; 5. Final remarks. Key words: basic education; Fundeb; public education. Regulamentado em 2006, o Fundo de Manutencao e Desenvolvimento da Educacao Basica e de Valorizacao do Magisterio (Fundeb) representa um avanco no financiamento da educacao publica brasileira. Ao vincular uma parcela consideravel de receitas a manutencao de todas as modalidades do ensino basico, o fundo pode contribuir para a reducao do analfabetismo, universalizacao do ensino basico (da educacao infantil ate o ensino medio), entre outros beneficios. Mas a politica de vinculacao dos recursos, isoladamente, pode nao ser suficiente para a mitigacao de todos os problemas apresentados pela educacao publica brasileira. Este artigo mostra que parece nao existir uma correlacao estatisticamente significativa entre o volume de recursos disponiveis para o investimento em educacao publica e o grau de desenvolvimento da mesma. A partir de um exercicio estatistico desenvolvido para os municipios do estado do Rio de Janeiro, mostrou-se que o Fundeb nao garante um maior aporte de recursos para os municipios mais atrasados do ponto de vista educacional. Ademais, argumenta-se que o direcionamento de recursos e condicao necessaria, porem nao suficiente, para se melhorar a educacao publica brasileira. A boa aplicacao das receitas do fundo e fundamental para o exito do mesmo. Sumario: 1. Introducao; 2. Metodo de estimacao log-lin; 3. O desenvolvimento educacional nos municipios do Rio de Janeiro e as receitas do Fundeb; 4. O Fundeb e a infraestrutura escolar no estado do Rio de Janeiro; 5. Consideracoes finais. Palavras-chave: educacao basica; Fundeb; rede publica de ensino.</td>
+</tr>
+<tr id="bib_Campos2009" class="bibtex noshow">
+<td><b>BibTeX</b>:
+<pre>
+@article{Campos2009,
+  author = {Campos, Bruno Cesar and Andrade Cruz, Breno de Paula},
+  title = {Impacts of the Fundeb on the quality of public basic education: an analysis for the municipalities of the state of Rio de Janeiro/Impactos do Fundeb sobre a qualidade do ensino basico publico: uma analise para os municipios do estado do Rio de Janeiro},
+  journal = {Revista de Administracao Publica-RAP},
+  publisher = {Fundacao Getulio Vargas},
+  year = {2009},
+  volume = {43},
+  number = {2}
+}
+</pre></td>
+</tr>
+<tr id="CARDOSO2017" class="entry">
+	<td>CARDOSO TA (2017), <i>"Estruturação do processo decisório para reforma de edificações escolares públicas do ensino fundamental utilizando o método multicritério de apoio à decisão-construtivista (MCDA-C)"</i>. Thesis at: UNIVERSIDADE FEDERAL DO PARANÁ. 
+	<p class="infolinks">[<a href="javascript:toggleInfo('CARDOSO2017','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('CARDOSO2017','bibtex')">BibTeX</a>] [<a href="https://sucupira.capes.gov.br/sucupira/public/consultas/coleta/trabalhoConclusao/viewTrabalhoConclusao.jsf?popup=true&id_trabalho=5857303" target="_blank">URL</a>]</p>
+	</td>
+</tr>
+<tr id="abs_CARDOSO2017" class="abstract noshow">
+	<td><b>Abstract</b>: As escolas são espaços organizados com o propósito de promover o ensino e a aprendizagem, por meio da transmissão de valores e o acúmulo de conhecimento de uma sociedade. Torna-se essencial adequar a infraestrutura destes ambientes para que possam estimular e viabilizar o aprendizado. Em vista da crescente demanda por obras de reforma em edificações escolares públicas, tornase cada vez mais complexo o processo de tomada de decisão para a priorização de intervenções de reforma nas unidades. O gestor público precisa enfrentar essa realidade, com um número cada vez maior de variáveis a serem consideradas e com o impacto das consequências das decisões tomadas. A priorização para a execução de reformas utilizando o procedimento multicriterial é uma estratégia para avaliar as diversas condicionantes legais existentes. Este estudo visa, por meio de um estudo de caso, exploratório, de natureza aplicada, e abordagem quali-quantitativa, construir um modelo multicritério de apoio à decisão para a priorização de intervenções de reforma de edificações escolares públicas do ensino fundamental, visando atender às exigências da legislação local vigente para o licenciamento deste tipo de edificação, e que concomitantemente promova a construção do conhecimento no decisor. A coleta de dados e a estruturação do modelo foram realizadas com os atores do processo decisório da Secretaria Municipal de Educação (SEMED) do município de Cascavel/PR e pautada na realidade da infraestrutura das unidades escolares da rede municipal de ensino. Foi utilizado o Método Multicritério de Apoio à Decisão - Construtivista (MCDA-C) na estruturação do processo decisório por meio de um modelo multicritério. Os atores legitimaram cada etapa da sua estruturação, expandindo o conhecimento acerca do contexto abordado, considerando os aspectos mais relevantes e fornecendo credibilidade aos resultados obtidos para a decisão de reforma da unidade com o pior desempenho apontado pelo modelo. O modelo construído é composto por 86 critérios agrupados em 10 pontos de vista fundamentais e 04 áreas de preocupação para a regularização das edificações escolares: legislação federal de acessibilidade a edificações, legislação estadual de segurança contra incêndio e pânico do Corpo de Bombeiros Militar do Estado do Paraná, legislação sanitária estadual e legislação municipal de uso do solo e código de obras.</td>
+</tr>
+<tr id="bib_CARDOSO2017" class="bibtex noshow">
+<td><b>BibTeX</b>:
+<pre>
+@mastersthesis{CARDOSO2017,
+  author = {TIAGO ALVES CARDOSO},
+  title = {Estruturação do processo decisório para reforma de edificações escolares públicas do ensino fundamental utilizando o método multicritério de apoio à decisão-construtivista (MCDA-C)},
+  school = {UNIVERSIDADE FEDERAL DO PARANÁ},
+  year = {2017},
+  url = {https://sucupira.capes.gov.br/sucupira/public/consultas/coleta/trabalhoConclusao/viewTrabalhoConclusao.jsf?popup=true&amp;id_trabalho=5857303}
+}
+</pre></td>
+</tr>
+<tr id="CASTRO2014" class="entry">
+	<td>CASTRO ES (2014), <i>"ESTUDO DO RESULTADO NA PROVA BRASIL DE 2011 DAS ESCOLAS COM ESTUDANTES BENEFICIÁRIOS DO PROGRAMA BOLSA FAMÍLIA"</i>. Thesis at: UNIVERSIDADE DE BRASÍLIA. 
+	<p class="infolinks">[<a href="javascript:toggleInfo('CASTRO2014','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('CASTRO2014','bibtex')">BibTeX</a>] [<a href="https://sucupira.capes.gov.br/sucupira/public/consultas/coleta/trabalhoConclusao/viewTrabalhoConclusao.jsf?popup=true&id_trabalho=855207" target="_blank">URL</a>]</p>
+	</td>
+</tr>
+<tr id="abs_CASTRO2014" class="abstract noshow">
+	<td><b>Abstract</b>: O presente estudo visa aprofundar o entendimento das variáveis que influenciam no desempenho escolar na Prova Brasil. Em particular, o trabalho foca as escolas que vêm recebendo alunos provenientes de famílias que têm o benefício do Programa Bolsa Família (PBF). A análise é feita dividindo-se as escolas nos seguintes grupos: o grupo 1 é composto de escolas que atendem até 80% de alunos PBF; o grupo 2, de escolas que atendem de 50% até 80%; o grupo 3, de escolas com 20% até 50%; e o grupo 4, de escolas que atendem até 20%. As análises são realizadas por meio da Modelagem por Equações Estruturais (SEM), tendo em vista evidenciar o impacto do fator extraescolar, nível socioeconômico médio da escola e vários fatores intraescolares (infraestrutura escolar, porte da escola, formação e tempo de docência dos professores) sobre o desempenho em Língua Portuguesa do 9.º ano das escolas de ensino fundamental que atendem estudantes beneficiários do PBF. O modelo teórico definido se ajustou para os quatro grupos de escolas e as variáveis apresentaram resultados diferenciados para cada um dos grupos.</td>
+</tr>
+<tr id="bib_CASTRO2014" class="bibtex noshow">
+<td><b>BibTeX</b>:
+<pre>
+@mastersthesis{CASTRO2014,
+  author = {ELIANICE SILVA CASTRO},
+  title = {ESTUDO DO RESULTADO NA PROVA BRASIL DE 2011 DAS ESCOLAS COM ESTUDANTES BENEFICIÁRIOS DO PROGRAMA BOLSA FAMÍLIA},
+  school = {UNIVERSIDADE DE BRASÍLIA},
+  year = {2014},
+  url = {https://sucupira.capes.gov.br/sucupira/public/consultas/coleta/trabalhoConclusao/viewTrabalhoConclusao.jsf?popup=true&amp;id_trabalho=855207}
+}
+</pre></td>
+</tr>
+<tr id="CAVALCANTE2014a" class="entry">
+	<td>CAVALCANTE DG (2014), <i>"O Impacto da Infraestrutura Escolar no Rendimento dos Alunos"</i>. Thesis at: UNIVERSIDADE DE BRASÍLIA. 
+	<p class="infolinks">[<a href="javascript:toggleInfo('CAVALCANTE2014a','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('CAVALCANTE2014a','bibtex')">BibTeX</a>] [<a href="https://sucupira.capes.gov.br/sucupira/public/consultas/coleta/trabalhoConclusao/viewTrabalhoConclusao.jsf?popup=true&id_trabalho=1735345" target="_blank">URL</a>]</p>
+	</td>
+</tr>
+<tr id="abs_CAVALCANTE2014a" class="abstract noshow">
+	<td><b>Abstract</b>: A relação entre os recursos escolares e o rendimento escolar dos alunos é bastante controversa na literatura, em grande parte porque envolve políticas públicas tradicionais voltadas para a melhora do capital humano social. No que se restringem ao impacto das infraestruturas física e organizacional das escolas as evidências também indicam pouca consistência na sua importância no desempenho dos alunos. Portanto, o objetivo do trabalho presente é estimar o impacto da infraestrutura na proficiência em matemática dos alunos de escolas públicas do Brasil fornecidos pelo Sistema de Avaliação da Educação Básica (Saeb) do ano de 2011. Para tanto, em vez utilizar um insumo de infraestrutura em específico como variável de interesse foi preferido utilizar um indicador de infraestrutura calculado para estre trabalho envolvendo diversas variáveis ligadas a infraestrutura. Além disso, deseja-se entender como a infraestrutura afeta os estudantes em seus diferentes percentis de distribuição na proficiência. Com esses objetivos, os modelos empregados são o de Mínimos Quadrados Ordinários e o de Regressão Quantílica. Os resultados indicam que o impacto da infraestrutura é positivo e significante. Além disso, o efeito não é homogêneo ao longo da distribuição da nota de proficiência.</td>
+</tr>
+<tr id="bib_CAVALCANTE2014a" class="bibtex noshow">
+<td><b>BibTeX</b>:
+<pre>
+@mastersthesis{CAVALCANTE2014a,
+  author = {DANIEL GOES CAVALCANTE},
+  title = {O Impacto da Infraestrutura Escolar no Rendimento dos Alunos},
+  school = {UNIVERSIDADE DE BRASÍLIA},
+  year = {2014},
+  url = {https://sucupira.capes.gov.br/sucupira/public/consultas/coleta/trabalhoConclusao/viewTrabalhoConclusao.jsf?popup=true&amp;id_trabalho=1735345}
+}
+</pre></td>
+</tr>
+<tr id="CAVALCANTE2014" class="entry">
+	<td>CAVALCANTE TCM (2014), <i>"O EFEITO DA INFRAESTRUTURA SOBRE AS PROFICIÊNCIAS MÉDIA DE PORTUGUÊS E MATEMÁTICA DAS ESCOLAS DA REDE MUNICIPAL DE ENSINO DE FORTALEZA"</i>. Thesis at: UNIVERSIDADE FEDERAL DO CEARÁ. 
+	<p class="infolinks">[<a href="javascript:toggleInfo('CAVALCANTE2014','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('CAVALCANTE2014','bibtex')">BibTeX</a>] [<a href="https://sucupira.capes.gov.br/sucupira/public/consultas/coleta/trabalhoConclusao/viewTrabalhoConclusao.jsf?popup=true&id_trabalho=4466544" target="_blank">URL</a>]</p>
+	</td>
+</tr>
+<tr id="abs_CAVALCANTE2014" class="abstract noshow">
+	<td><b>Abstract</b>: Uma condição necessária para promover a educação é o ambiente físico da escola, denominado como infraestrutura escolar, o qual estimula e viabiliza o aprendizado dos alunos. Neste sentido, esta dissertação se propõe a estimar o efeito da infraestrutura sobre as proficiências de português e matemática dos alunos do 5º e 9º do ensino fundamental das escolas públicas municipais de Fortaleza. Para isso, utilizam-se as informações da Prova Brasil de 2011, realizada pelo INEP. A partir dos resultados verifica-se que não existe parcimônia sobre efeitos da infraestrutura das escolas em relação a proficiência média. No entanto, convém ressaltar que o estado do Telhado, das Salas, da Biblioteca e dos Laboratórios apresentam efeitos positivos sobre as proficiências de português e matemática para os alunos do 5º e 9º.</td>
+</tr>
+<tr id="bib_CAVALCANTE2014" class="bibtex noshow">
+<td><b>BibTeX</b>:
+<pre>
+@mastersthesis{CAVALCANTE2014,
+  author = {TEREZA CRISTINA MATOS CAVALCANTE},
+  title = {O EFEITO DA INFRAESTRUTURA SOBRE AS PROFICIÊNCIAS MÉDIA DE PORTUGUÊS E MATEMÁTICA DAS ESCOLAS DA REDE MUNICIPAL DE ENSINO DE FORTALEZA},
+  school = {UNIVERSIDADE FEDERAL DO CEARÁ},
+  year = {2014},
+  url = {https://sucupira.capes.gov.br/sucupira/public/consultas/coleta/trabalhoConclusao/viewTrabalhoConclusao.jsf?popup=true&amp;id_trabalho=4466544}
+}
+</pre></td>
+</tr>
+<tr id="COSTA2015" class="entry">
+	<td>COSTA AJDS (2015), <i>"O ESPAÇO EM ESCOLAS PÚBLICAS MUNICIPAIS DE FLORIANÓPOLIS E SUA IMPLICAÇÃO NAS ESCOLHAS CURRICULARES DE PROFESSORES DE EDUCAÇÃO FÍSICA"</i>. Thesis at: UNIVERSIDADE FEDERAL DE SANTA CATARINA. 
+	<p class="infolinks">[<a href="javascript:toggleInfo('COSTA2015','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('COSTA2015','bibtex')">BibTeX</a>] [<a href="https://sucupira.capes.gov.br/sucupira/public/consultas/coleta/trabalhoConclusao/viewTrabalhoConclusao.jsf?popup=true&id_trabalho=2892058" target="_blank">URL</a>]</p>
+	</td>
+</tr>
+<tr id="abs_COSTA2015" class="abstract noshow">
+	<td><b>Abstract</b>: Esta proposta de investigação parte da premissa de que o espaço não é um dado estanque e natural, mas que o indivíduo lida através de concepções construídas historicamente, e nas quais a escola desempenha um papel crucial. Teve como objetivo analisar a estrutura física das áreas destinadas à Educação Física (EF) nas escolas da RME Florianópolis, suas condições de manutenção, e as concepções de espaço e currículo de professores de Educação Física que atuam nos anos iniciais do Ensino Fundamental. Metodologicamente, a pesquisa foi dividida em duas etapas. No primeiro momento, foi analisada a estrutura física à disposição de professores de EF em 34 escolas que atendem o Ensino Fundamental e que fazem parte da RME Florianópolis, no período de abril a junho de 2014. A partir desta análise, foram traçados um perfil destes espaços e uma proposta de categorização, tanto para as quadras esportivas – espaço identificado como prioritário no imaginário social em torno dessa disciplina na escola – quanto para o conjunto de espaços existentes nas escolas. Esta categorização foi pensada no sentido de contribuir para a análise de outras redes e também para guiar a elaboração de projetos de escolas que contemplem as necessidades deste componente curricular. Foram criados quatro extratos, a partir da identificação de semelhanças e diferenças entre as escolas analisadas, de modo que se pudesse identificar cada unidade de forma mais sensível às suas limitações ou potencialidades. Em seguida, foram selecionadas três escolas para o aprofundamento da pesquisa, com a realização de entrevistas semiestruturadas com cinco professores de EF que atuam junto aos anos iniciais. Procuramos identificar a concepção de espaço e infraestrutura considerada ideal, a partir de suas concepções da própria disciplina e de seu papel na escola. Buscamos também problematizar significados atribuídos aos espaços físicos destinados à EF, a partir das escolhas de conteúdo e metodologia no planejamento dos anos iniciais do Ensino Fundamental, relatadas pelos próprios professores. Por fim, também foi entrevistado o diretor de infraestrutura desta SME, buscando-se elementos que respondessem aos questionamentos feitos pelos professores. A estrutura física das escolas da RME Florianópolis é muito mais completa do que os estudos de abrangência nacional têm mostrado em relação à escola pública, em geral, mas existem diferenças substanciais entre as escolas desta rede. Devemos questionar também a legitimidade dos espaços escolhidos para a Educação Física, que se baseiam, conforme mostramos, sobretudo no modelo esportivo.</td>
+</tr>
+<tr id="bib_COSTA2015" class="bibtex noshow">
+<td><b>BibTeX</b>:
+<pre>
+@mastersthesis{COSTA2015,
+  author = {ANDRE JUSTINO DOS SANTOS COSTA},
+  title = {O ESPAÇO EM ESCOLAS PÚBLICAS MUNICIPAIS DE FLORIANÓPOLIS E SUA IMPLICAÇÃO NAS ESCOLHAS CURRICULARES DE PROFESSORES DE EDUCAÇÃO FÍSICA},
+  school = {UNIVERSIDADE FEDERAL DE SANTA CATARINA},
+  year = {2015},
+  url = {https://sucupira.capes.gov.br/sucupira/public/consultas/coleta/trabalhoConclusao/viewTrabalhoConclusao.jsf?popup=true&amp;id_trabalho=2892058}
+}
+</pre></td>
+</tr>
+<tr id="COSTA2013" class="entry">
+	<td>COSTA JSDM (2013), <i>"Decentralization and School Quality: Evidence from Brazil´s Direct Cash to School Program"</i>. Thesis at: PONTIFÍCIA UNIVERSIDADE CATÓLICA DO RIO DE JANEIRO. 
+	<p class="infolinks">[<a href="javascript:toggleInfo('COSTA2013','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('COSTA2013','bibtex')">BibTeX</a>] [<a href="https://sucupira.capes.gov.br/sucupira/public/consultas/coleta/trabalhoConclusao/viewTrabalhoConclusao.jsf?popup=true&id_trabalho=156021" target="_blank">URL</a>]</p>
+	</td>
+</tr>
+<tr id="abs_COSTA2013" class="abstract noshow">
+	<td><b>Abstract</b>: Aproveitando um desenho de regressão descontínua do Programa Dinheiro Direto na Escola, o primeiro artigo investiga se um aumento dos recursos administrados pela comunidade escolar resulta em melhoria da qualidade da educação. Os resultados indicam uma melhoria da qualidade da infraestrutura escolar, revelando a opção pelo investimento em equipamentos da escola em detrimento da infraestrutura física. Encontra-se ainda que quanto maior o nível de escolaridade das mães e quanto maior o nível de envolvimento da comunidade na escola, mais os recursos são utilizados em investimentos que beneficiem diretamente os alunos. Apesar da melhoria na infraestrutura escolar, não há efeito sobre desempenho do aluno. O segundo artigo explora outra regra do mesmo programa que também propicia uma análise utilizando regressão descontínua. Identifica-se que uma maior participação da comunidade escolar na gestão dos recursos associada a mais recursos apresenta efeito positivo sobre infraestrutura da escola, mas não sobre desempenho do aluno. Novamente encontram-se efeitos heterogêneos de acordo com características da comunidade local como educação. Adicionalmente, tenta-se isolar o efeito de gestão pela comunidade local do efeito de mais recursos. Por fim, o terceiro artigo analisa o efeito de banda larga na escola sobre as práticas escolares e o desempenho de alunos. Para isso, aproveita-se a expansão ocorrida devido ao Programa Banda Larga nas Escolas utilizando-se o método de diferenças-em-diferenças.</td>
+</tr>
+<tr id="bib_COSTA2013" class="bibtex noshow">
+<td><b>BibTeX</b>:
+<pre>
+@phdthesis{COSTA2013,
+  author = {JOANA SIMOES DE MELO COSTA},
+  title = {Decentralization and School Quality: Evidence from Brazil´s Direct Cash to School Program},
+  school = {PONTIFÍCIA UNIVERSIDADE CATÓLICA DO RIO DE JANEIRO},
+  year = {2013},
+  url = {https://sucupira.capes.gov.br/sucupira/public/consultas/coleta/trabalhoConclusao/viewTrabalhoConclusao.jsf?popup=true&amp;id_trabalho=156021}
+}
+</pre></td>
+</tr>
+<tr id="DALLAGNOL2015" class="entry">
+	<td>DALLAGNOL R (2015), <i>"Política educacional e espaço físico escolar: a infraestrutura como dimensão na garantia de padrão de qualidade"</i>. Thesis at: UNIVERSIDADE FEDERAL DA FRONTEIRA SUL. 
+	<p class="infolinks">[<a href="javascript:toggleInfo('DALLAGNOL2015','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('DALLAGNOL2015','bibtex')">BibTeX</a>] [<a href="https://sucupira.capes.gov.br/sucupira/public/consultas/coleta/trabalhoConclusao/viewTrabalhoConclusao.jsf?popup=true&id_trabalho=2630221" target="_blank">URL</a>]</p>
+	</td>
+</tr>
+<tr id="abs_DALLAGNOL2015" class="abstract noshow">
+	<td><b>Abstract</b>: Este trabalho se situa no campo das políticas educacionais e tem por objetivo analisar os referenciais normativos e as ações políticas de âmbito nacional propostos no período posterior a 1988 no que tange ao espaço físico escolar. Verifica-se se este se apresenta como um fator no estabelecimento de condições de qualidade na educação básica brasileira. A pesquisa se estrutura em uma abordagem qualitativa descritiva que utiliza fontes bibliográficas e documentais. Primeiramente, focam-se os conceitos e modelos analíticos de política pública, dando destaque para a abordagem cognitiva de políticas. Para essa abordagem, as políticas públicas são estabelecidas em um cenário de disputa de diversos atores. Tais atores apresentam ideias que resultam de interações sociais e, uma vez instituídas, acabam por formar referenciais cognitivos que fundamentam as matrizes cognitivas (políticas públicas). Através dessa perspectiva de análise de política pública, investigamos as políticas educacionais direcionadas para o espaço físico escolar no contexto temporal após 1988. Contudo, a pesquisa também aborda o espaço físico escolar desde o período republicano. No contexto da Primeira República, destacam-se os grupos escolares e a preocupação com a construção de prédios destinados para a educação. A partir da década de 1930, evidenciam-se as propostas articuladas por Anísio Teixeira, sobretudo nos projetos efetuados na Bahia e no Rio de Janeiro. Nos anos 1960 e 1970, enfatizam-se os acordos entre o Ministério da Educação (MEC) e a United States Agency for International Development (USAID), os quais levaram à implantação de escolas polivalentes. Na década de 1980, destaca-se a criação dos Centros Integrados de Educação Pública (CIEPs) e dos Centros Integrados de Atendimento à Criança (CIACs). A estrutura física escolar dos CIEPs e dos CIACS veio ao encontro das perspectivas políticas da referida conjuntura, as quais objetivavam a democratização com qualidade da educação, garantindo o acesso e a permanência dos estudantes na escola pública básica. A partir de 1988, analisa-se o espaço físico escolar em documentos como a Constituição Federal de 1988, a Lei de Diretrizes e Bases da Educação (LDB, Lei n.º 9.394/96), o Plano Decenal de Educação para Todos (1993-2003), o Plano Nacional de Educação (PNE) e o Censo Escolar; em programas e planos como o Fundo de Desenvolvimento da Escola (Fundescola), o Plano de Ações Articuladas (PAR) e o Programa Nacional de Reestruturação e Aquisição de Equipamentos para a Rede Escolar Pública de Educação Infantil (Proinfância); e nos documentos da Conferência Nacional de Educação (CONAE). Com estes referenciais normativos destacamos que o espaço físico escolar pode ser entendido como uma ideia institucionalizada no cenário de produção das políticas públicas. Do mesmo modo, verificam-se os aspectos relacionados ao espaço físico escolar e como este é articulado como uma dimensão para a garantia da melhoria de qualidade na educação. Nesse processo, apresentamos o conceito de qualidade vinculado aos fatores intra e extraescolares, os quais se mostram como um parâmetro de análise da qualidade posta pelos referenciais normativos.</td>
+</tr>
+<tr id="bib_DALLAGNOL2015" class="bibtex noshow">
+<td><b>BibTeX</b>:
+<pre>
+@mastersthesis{DALLAGNOL2015,
+  author = {RAQUEL DALLAGNOL},
+  title = {Política educacional e espaço físico escolar: a infraestrutura como dimensão na garantia de padrão de qualidade},
+  school = {UNIVERSIDADE FEDERAL DA FRONTEIRA SUL},
+  year = {2015},
+  url = {https://sucupira.capes.gov.br/sucupira/public/consultas/coleta/trabalhoConclusao/viewTrabalhoConclusao.jsf?popup=true&amp;id_trabalho=2630221}
+}
+</pre></td>
+</tr>
+<tr id="DUARTE2015" class="entry">
+	<td>DUARTE RK (2015), <i>"Os espaços das pré-escolas municipais de São Paulo: projetos, usos e transformações"</i>. Thesis at: PONTIFÍCIA UNIVERSIDADE CATÓLICA DE SÃO PAULO. 
+	<p class="infolinks">[<a href="javascript:toggleInfo('DUARTE2015','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('DUARTE2015','bibtex')">BibTeX</a>] [<a href="https://sucupira.capes.gov.br/sucupira/public/consultas/coleta/trabalhoConclusao/viewTrabalhoConclusao.jsf?popup=true&id_trabalho=3143984" target="_blank">URL</a>]</p>
+	</td>
+</tr>
+<tr id="abs_DUARTE2015" class="abstract noshow">
+	<td><b>Abstract</b>: Este estudo tem por objetivo discutir o espaço físico das pré-escolas municipais de São Paulo, buscando adensar estudos e reflexões sobre as edificações escolares: os projetos arquitetônicos, seus usos e transformações. Analisa os processos determinantes da organização e modificações que ocorrem nos prédios, seu significado educacional e cultural, e as intenções educadoras dos profissionais e supostas na estruturação espacial das instituições. A pesquisa parte das hipóteses de que há carências na articulação entre concepções e ações, entre as instâncias governamentais e as escolas, que podem se refletir nos espaços e processos educacionais e no acolhimento à comunidade educativa. Para fundamentar as análises foram consultados autores da área da educação e arquitetura, que concebem a arquitetura escolar como elemento significativo do currículo e fonte de experiências e aprendizagem. Também fundamentaram o trabalho documentos oficiais nacionais e municipais contendo orientações curriculares e padrões de qualidade para a educação infantil. Como fonte de dados foram realizadas entrevistas com arquitetos atuantes na rede municipal e com profissionais de três Escolas Municipais de Educação Infantil (EMEIs), que atendem crianças de 4 e 5 anos de idade. Foram levantadas fotos e plantas das unidades, seus projetos político-pedagógicos e documentos oficiais sobre orientações curriculares e legais que normatizam as intervenções nos prédios. A investigação procurou analisar papéis e responsabilidades de educadores, comunidade, gestores municipais e arquitetos, para intervenções nesses espaços e os elementos que se revelaram como motivadores dessas intervenções: o atendimento ao projeto pedagógico da escola; a funcionalidade; a segurança, o bemestar e saúde dos usuários.</td>
+</tr>
+<tr id="bib_DUARTE2015" class="bibtex noshow">
+<td><b>BibTeX</b>:
+<pre>
+@phdthesis{DUARTE2015,
+  author = {RIVANIA KALIL DUARTE},
+  title = {Os espaços das pré-escolas municipais de São Paulo: projetos, usos e transformações},
+  school = {PONTIFÍCIA UNIVERSIDADE CATÓLICA DE SÃO PAULO},
+  year = {2015},
+  url = {https://sucupira.capes.gov.br/sucupira/public/consultas/coleta/trabalhoConclusao/viewTrabalhoConclusao.jsf?popup=true&amp;id_trabalho=3143984}
+}
+</pre></td>
+</tr>
+<tr id="GAVA2015" class="entry">
+	<td>FABIOLA ALVES COUTINHO GAVA (2015), <i>"Espaço e educação infantil: o cotidiano de interações e sentidos em um espaço improvisado"</i>. Thesis at: Faculdade Vale do Cricaré. 
+	<p class="infolinks">[<a href="javascript:toggleInfo('GAVA2015','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('GAVA2015','bibtex')">BibTeX</a>] [<a href="https://sucupira.capes.gov.br/sucupira/public/consultas/coleta/trabalhoConclusao/viewTrabalhoConclusao.jsf?popup=true&id_trabalho=3259128" target="_blank">URL</a>]</p>
+	</td>
+</tr>
+<tr id="abs_GAVA2015" class="abstract noshow">
+	<td><b>Abstract</b>: Este resumo apresenta a pesquisa desenvolvida no Curso de Mestrado Profissional em Gestão Social, Educação e Desenvolvimento Regional, do Programa de PósGraduação stricto sensu, da Faculdade Vale do Cricaré (FVC), intitulada “Espaço e Educação Infantil: o cotidiano de interações e sentidos em um espaço improvisado”. A pesquisa tem o objetivo de refletir sobre o espaço físico escolar para a educação infantil a partir dos sentidos e interações entre os sujeitos que vivenciam, percebem, significam e modificam esse espaço. Participaram da pesquisa, adultos e crianças de um Centro Municipal de Educação Infantil (CMEI) do município de Serra - ES, que funcionou em um espaço improvisado por quase cinco meses. Para tanto, desenvolveu-se uma pesquisa qualitativa, como um estudo de caso de abordagem sócio-histórica. Utilizou-se para coleta de dados: observação participante com registro em diário de campo, análise documental, questionário, entrevista semiestruturada e conversas. Referencialmente, recorre-se a pesquisadores e autores para situar a presente pesquisa quanto aos conceitos de infância e criança na compreensão do atendimento da educação infantil em sua contextualização social e histórica, bem como a análise das questões referentes ao espaço, espaço escolar e interações considerando-se ainda os apontamentos dos documentos oficiais sobre a temática no país. Para a análise dos dados, buscaram-se duas diretrizes que orientaram o aprofundamento em relação às questões apontadas pelos dados oriundos dos diferentes instrumentos, sendo: do espaço improvisado ao cotidiano de um espaço escolar; e as interações e práticas de adultos e crianças, revelando sentidos e reflexões dos diferentes sujeitos da educação infantil. Como resultado, o estudo revela a influência do espaço escolar para além de sua dimensão física, mas também relacional, buscando as reflexões, sentidos e interações que os sujeitos da educação infantil trazem em suas vivências no cotidiano do espaço que lhes é destinado.</td>
+</tr>
+<tr id="bib_GAVA2015" class="bibtex noshow">
+<td><b>BibTeX</b>:
+<pre>
+@mastersthesis{GAVA2015,
+  author = {FABIOLA ALVES COUTINHO GAVA},
+  title = {Espaço e educação infantil: o cotidiano de interações e sentidos em um espaço improvisado},
+  school = {Faculdade Vale do Cricaré},
+  year = {2015},
+  url = {https://sucupira.capes.gov.br/sucupira/public/consultas/coleta/trabalhoConclusao/viewTrabalhoConclusao.jsf?popup=true&amp;id_trabalho=3259128}
+}
+</pre></td>
+</tr>
+<tr id="FALCIANO2017" class="entry">
+	<td>FALCIANO BT (2017), <i>"A trajetória escolar de crianças desde a Educação Infantil aos primeiros anos do Ensino Fundamental: a construção de uma metodologia a partir do Censo da Educação Básica"</i>. Thesis at: UNIVERSIDADE FEDERAL DO ESTADO DO RIO DE JANEIRO. 
+	<p class="infolinks">[<a href="javascript:toggleInfo('FALCIANO2017','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('FALCIANO2017','bibtex')">BibTeX</a>] [<a href="https://sucupira.capes.gov.br/sucupira/public/consultas/coleta/trabalhoConclusao/viewTrabalhoConclusao.jsf?popup=true&id_trabalho=5049368" target="_blank">URL</a>]</p>
+	</td>
+</tr>
+<tr id="abs_FALCIANO2017" class="abstract noshow">
+	<td><b>Abstract</b>: Este estudo apresenta as características que delineiam as trajetórias escolares de um grupo de crianças nascidas no município do Rio de Janeiro, desde a Educação Infantil até os primeiros anos do Ensino Fundamental. Essas trajetórias foram construídas a partir dos microdados do Censo da Educação Básica brasileira divulgado pelo Inep e, para tanto, foi necessário desenvolver uma metodologia específica de análise. Esse estudo revela os diferentes caminhos trilhados por essas crianças a partir da investigação de temas como: diferenças entre a rede privada e pública, fluxo escolar, instalações físicas das escolas, serviços educacionais, infraestrutura escolar e acesso ao sistema educacional. Esperamos que essas informações contribuam para o debate sobre as estratégias de atendimento educacional e a formulação de políticas públicas para a educação.</td>
+</tr>
+<tr id="bib_FALCIANO2017" class="bibtex noshow">
+<td><b>BibTeX</b>:
+<pre>
+@mastersthesis{FALCIANO2017,
+  author = {BRUNO TOVAR FALCIANO},
+  title = {A trajetória escolar de crianças desde a Educação Infantil aos primeiros anos do Ensino Fundamental: a construção de uma metodologia a partir do Censo da Educação Básica},
+  school = {UNIVERSIDADE FEDERAL DO ESTADO DO RIO DE JANEIRO},
+  year = {2017},
+  url = {https://sucupira.capes.gov.br/sucupira/public/consultas/coleta/trabalhoConclusao/viewTrabalhoConclusao.jsf?popup=true&amp;id_trabalho=5049368}
+}
+</pre></td>
+</tr>
+<tr id="FIDELIS2017" class="entry">
+	<td>FIDELIS GA (2017), <i>"A CONTRIBUIÇÃO DE AULAS PRÁTICAS APOIADAS NA APRENDIZAGEM COLABORATIVA PARA O PROCESSO DE ENSINO-APRENDIZAGEM DE BIOLOGIA"</i>. Thesis at: UNIVERSIDADE ESTADUAL DE MARINGÁ. 
+	<p class="infolinks">[<a href="javascript:toggleInfo('FIDELIS2017','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('FIDELIS2017','bibtex')">BibTeX</a>] [<a href="https://sucupira.capes.gov.br/sucupira/public/consultas/coleta/trabalhoConclusao/viewTrabalhoConclusao.jsf?popup=true&id_trabalho=5127718" target="_blank">URL</a>]</p>
+	</td>
+</tr>
+<tr id="abs_FIDELIS2017" class="abstract noshow">
+	<td><b>Abstract</b>: A preocupação dos professores com a efetividade do ensino de Biologia perpassa pela ampla gama de conteúdos presentes no currículo, aliada à dificuldade em sistematizá-los, principalmente pelas condições de trabalho. É papel do professor elaborar o plano de trabalho docente de acordo com a sua realidade escolar e elencar estratégias de ensino que possibilitem a aprendizagem. Nesse contexto, a aula prática é uma modalidade didática que permite maior interação entre os alunos, e conforme a Teoria Sociocultural de Vygotsky, a interação permite a troca de conhecimentos e a consequente aprendizagem. O objetivo desta pesquisa foi investigar se as aulas práticas apoiadas na Aprendizagem Colaborativa podem contribuir para o processo de ensino-aprendizagem de temas da disciplina de Biologia. A presente investigação adotou a metodologia qualitativa e os pressupostos teóricos da Aprendizagem Colaborativa. Os instrumentos para a constituição dos dados foram entrevista semiestruturada, questionários, observação e aplicação de uma unidade didática segundo as etapas da Aprendizagem Colaborativa e adaptadas para este estudo. A intervenção ocorreu em um colégio na cidade de Maringá, PR, com 38 alunos da 2ª série do Ensino Médio e a respectiva professora de Biologia, totalizando 39 participantes. Os dados foram tratados pelo método de Análise de Conteúdo e as categorias de análise definidas conforme as investigações realizadas. Para a percepção docente, elencaram-se as categorias condições de trabalho e estratégias de ensino; para a percepção discente, importância das aulas práticas, conteúdos abordados e estratégias de ensino; e para a intervenção didática utilizando as etapas da Aprendizagem Colaborativa, as categorias: participação dos alunos, interação e contribuição para o ensino-aprendizagem. Os resultados obtidos apontam que a percepção docente evidenciou as dificuldades enfrentadas na atualidade, dentre as quais a baixa carga horária da disciplina, a falta de um técnico de laboratório de Ciências e Biologia e a precária infraestrutura escolar. Na investigação da percepção discente, os dados obtidos revelam que os alunos reconhecem a importância das aulas práticas para o aprendizado e que atividades diferenciadas despertam o interesse pelo aprendizado. Ao longo da intervenção didática podese perceber a ampla participação dos alunos frente à mediação da pesquisadora. Esta pesquisa proporcionou a interação aluno-aluno e professor-aluno e contribuiu para a efetividade do processo de ensino-aprendizagem de Biologia.</td>
+</tr>
+<tr id="bib_FIDELIS2017" class="bibtex noshow">
+<td><b>BibTeX</b>:
+<pre>
+@phdthesis{FIDELIS2017,
+  author = {GISELE APARECIDA FIDELIS},
+  title = {A CONTRIBUIÇÃO DE AULAS PRÁTICAS APOIADAS NA APRENDIZAGEM COLABORATIVA PARA O PROCESSO DE ENSINO-APRENDIZAGEM DE BIOLOGIA},
+  school = {UNIVERSIDADE ESTADUAL DE MARINGÁ},
+  year = {2017},
+  url = {https://sucupira.capes.gov.br/sucupira/public/consultas/coleta/trabalhoConclusao/viewTrabalhoConclusao.jsf?popup=true&amp;id_trabalho=5127718}
+}
+</pre></td>
+</tr>
+<tr id="FILHO2014a" class="entry">
+	<td>FILHO ACDA (2014), <i>"MODELO DE MENSURAÇÃO DO DESEMPENHO DOS INSTITUTOS FEDERAIS: UMA ANÁLISE A PARTIR DE MICRODADOS"</i>. Thesis at: UNIVERSIDADE FEDERAL DA PARAÍBA ( JOÃO PESSOA ). 
+	<p class="infolinks">[<a href="javascript:toggleInfo('FILHO2014a','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('FILHO2014a','bibtex')">BibTeX</a>] [<a href="https://sucupira.capes.gov.br/sucupira/public/consultas/coleta/trabalhoConclusao/viewTrabalhoConclusao.jsf?popup=true&id_trabalho=1091049" target="_blank">URL</a>]</p>
+	</td>
+</tr>
+<tr id="abs_FILHO2014a" class="abstract noshow">
+	<td><b>Abstract</b>: Este trabalho traz uma visão hermenêutica da aprendizagem organizacional a partir da atribuição de significado a dados públicos existentes no acervo de microdados do INEP e IBGE. Apresenta uma visão dos avanços e desafios encontrados com a ampliação da oferta da educação básica nos IF´s da Região Nordeste, favorecendo a criação de um lastro dos resultados específicos na Rede Federal de Educação Profissionalizante, para a avaliação da qualidade do ensino público no período de vigência do PNE 2001-2010. Tal avaliação da realidade do setor educacional, a que se propõe este trabalho, ressoa a reflexão de Senge et al. (2005) sobre o significado da aprendizagem para uma organização e a necessidade de desenvolver um entendimento claro e honesto da realidade. No curso do presente estudo, foram aplicados conceitos que fazem a ligação entre a criação de conhecimento organizacional e a aprendizagem organizacional, mormente, no âmbito da gestão escolar, haja vista a mensuração dos resultados educacionais de 52 escolas pertencentes a uma mesma rede de ensino, para responder a conflitos mais diretamente ligados à superação de assimetrias regionais e à avaliação da qualidade do ensino público compreendendo além de variáveis relativas aos fatores intraescolares (resultado escolar, infraestrutura escolar, recursos humanos e fluxo escolar), os fatores extraescolares (fatores do espaço social dos alunos). Tencionamos, pois, à guisa de conclusão, contribuir para o avanço do debate sobre a isonomia e eficiência na prestação do serviço público educacional, como prevê o artigo 206 da Constituição Federal, de garantia de padrão de qualidade para o ensino no país, sob uma tendência mimética das escolas bem-sucedidas e de resultados que sinalizam a necessidade de observância ao background familiar dos alunos dos IF´s, uma vez que o grau de escolaridade dos pais do aluno, o nível da renda familiar e o aspecto de o aluno ter estudado o ensino fundamental em escola particular, antes do ingresso no IF, reverberam positivamente no desempenho dos discentes em proficiências nas áreas de conhecimento avaliadas pelo Enem.</td>
+</tr>
+<tr id="bib_FILHO2014a" class="bibtex noshow">
+<td><b>BibTeX</b>:
+<pre>
+@mastersthesis{FILHO2014a,
+  author = {ALVARO CAVALCANTI DE ALMEIDA FILHO},
+  title = {MODELO DE MENSURAÇÃO DO DESEMPENHO DOS INSTITUTOS FEDERAIS: UMA ANÁLISE A PARTIR DE MICRODADOS},
+  school = {UNIVERSIDADE FEDERAL DA PARAÍBA ( JOÃO PESSOA )},
+  year = {2014},
+  url = {https://sucupira.capes.gov.br/sucupira/public/consultas/coleta/trabalhoConclusao/viewTrabalhoConclusao.jsf?popup=true&amp;id_trabalho=1091049}
+}
+</pre></td>
+</tr>
+<tr id="FILHO2014" class="entry">
+	<td>FILHO JANDC (2014), <i>"O TRIBUNAL DE CONTAS DO ESTADO DA PARAÍBA E A AVALIAÇÃO DA GESTÃO EDUCACIONAL: INDICADORES DE DESEMPENHO, ANÁLISE E PERSPECTIVAS"</i>. Thesis at: UNIVERSIDADE FEDERAL DA PARAÍBA ( JOÃO PESSOA ). 
+	<p class="infolinks">[<a href="javascript:toggleInfo('FILHO2014','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('FILHO2014','bibtex')">BibTeX</a>] [<a href="https://sucupira.capes.gov.br/sucupira/public/consultas/coleta/trabalhoConclusao/viewTrabalhoConclusao.jsf?popup=true&id_trabalho=2182447" target="_blank">URL</a>]</p>
+	</td>
+</tr>
+<tr id="abs_FILHO2014" class="abstract noshow">
+	<td><b>Abstract</b>: Este trabalho apresenta uma visão gerencial de como se desenvolve o processo de avaliação da educação infantil e ensino fundamental nos municípios paraibanos sob a ótica do Tribunal de Contas do Estado da Paraíba. O objetivo principal foi verificar se o Tribunal está fiscalizando aspectos de resultados previstos na legislação educacional. No desenvolvimento do estudo, observou-se que o Tribunal apenas gerencia dois critérios/indicadores, quais sejam: percentual da receita de impostos mais transferências investido na manutenção e desenvolvimento do ensino e; percentual de recursos do FUNDEB investido na remuneração do magistério. Constatou-se que esses dois indicadores são insuficientes para fornecer uma visão adequada dos resultados do sistema educacional. Por isso, foi proposta a utilização de seis novos indicadores para complementar a avaliação de desempenho procedida pelo Tribunal. Esses novos indicadores fornecem uma visão dos resultados das políticas públicas. Verificou-se, também, que o Tribunal já dispõe de uma ferramenta tecnológica para análise desses indicadores. Trata-se do sistema de Indicadores de Desempenho dos Gastos Públicos em Educação Básica na Paraíba (IDGPB). Com a adoção desses novos indicadores, a análise efetuada pelo Tribunal ultrapassa o aspecto financeiro e passa a abranger outras dimensões, como infraestrutura escolar, docentes, rendimento, qualidade escolar, matrícula e acesso à educação. Esta ampliação das dimensões de análise é imprescindível para adequação do sistema de controle exercido pelo Tribunal de Contas ao novo modelo de gestão, cujo foco passa de burocrático e formal para resultados e gerencial. Além disso, a ampliação da análise fornece à sociedade um diagnóstico mais real da situação do ensino infantil e fundamental nos municípios paraibanos e auxilia os gestores no processo decisório.</td>
+</tr>
+<tr id="bib_FILHO2014" class="bibtex noshow">
+<td><b>BibTeX</b>:
+<pre>
+@mastersthesis{FILHO2014,
+  author = {JOAO ALFREDO NUNES DA COSTA FILHO},
+  title = {O TRIBUNAL DE CONTAS DO ESTADO DA PARAÍBA E A AVALIAÇÃO DA GESTÃO EDUCACIONAL: INDICADORES DE DESEMPENHO, ANÁLISE E PERSPECTIVAS},
+  school = {UNIVERSIDADE FEDERAL DA PARAÍBA ( JOÃO PESSOA )},
+  year = {2014},
+  url = {https://sucupira.capes.gov.br/sucupira/public/consultas/coleta/trabalhoConclusao/viewTrabalhoConclusao.jsf?popup=true&amp;id_trabalho=2182447}
+}
+</pre></td>
+</tr>
+<tr id="FONSECA2013" class="entry">
+	<td>FONSECA DACD (2013), <i>"O espaço escolar e sua contribuição para o ensino de Língua Estrangeira Moderna: um estudo de caso"</i>. Thesis at: UNIVERSIDADE DO OESTE PAULISTA. 
+	<p class="infolinks">[<a href="javascript:toggleInfo('FONSECA2013','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('FONSECA2013','bibtex')">BibTeX</a>] [<a href="https://sucupira.capes.gov.br/sucupira/public/consultas/coleta/trabalhoConclusao/viewTrabalhoConclusao.jsf?popup=true&id_trabalho=209907" target="_blank">URL</a>]</p>
+	</td>
+</tr>
+<tr id="abs_FONSECA2013" class="abstract noshow">
+	<td><b>Abstract</b>: O espaço físico escolar ainda deixa muitos questionamentos ao considerado como instrumento para o processo de ensino e aprendizagem. No ensino da Língua Estrangeira, esse problema se intensifica, em razão da real necessidade da existência de espaços preparados, ambientados como facilitadores para a prática de uma nova língua. Com a finalidade de encontrar soluções para a falta de um ambiente que favoreça o ensino e a aprendizagem de uma língua estrangeira, que neste caso é a Língua Inglesa, utilizou-se a pesquisa qualitativa de natureza bibliográfica e o estudo de caso. Esta pesquisa baseou-se no estudo de caso na EE ?Antônio Marinho de Carvalho Filho?, localizada no interior do Estado de São Paulo, na cidade de Presidente Venceslau. Para que não haja somente uma visão unilateral da pesquisadora, a pesquisa qualitativa baseou-se nas relações entre os usuários e os espaços existentes, por meio da observação tanto de aulas ministradas como dos espaços do edifício escolar. Além das observações, foram utilizados questionários e entrevistas não-estruturadas voltadas para alunos e professores envolvidos no processo do ensino e da aprendizagem da Língua Inglesa. Importante lembrar que o estudo baseou-se na experiência vivida nas aulas do Ensino Fundamental Ciclo II, do 6° ao 9° ano. Para abordar tal tema, foi necessário também avaliar o ambiente físico, sua ocupação e a percepção dos usuários, por meio de uma abordagem experiencial e pela observação comportamental. Para isso, foram utilizados os instrumentos: Walkthrough, Mapa Comportamental, Wish Poem, Seleção Visual, e uma vistoria técnica que contou com levantamento e documentação arquitetônica. A pesquisa bibliográfica pelos campos da Pedagogia e Arquitetura incluiu os estudos de Kowaltowski, Frago, Rheingantz e de outros teóricos que se preocupam com o uso do espaço escolar como currículo e nos quais se encontram algumas respostas claras sobre a influência espacial no processo educativo. Os dados coletados intensificaram a necessidade de uma readequação espacial na escola estudada, em relação aos ambientes voltados para o processo de ensino e aprendizagem, em especial da Língua Inglesa. Por fim, foram apontadas alternativas de uso e ocupação dos espaços estudados com recomendações para melhoria dos ambientes com o intuito de favorecer o ensino de Língua Estrangeira Moderna.</td>
+</tr>
+<tr id="bib_FONSECA2013" class="bibtex noshow">
+<td><b>BibTeX</b>:
+<pre>
+@mastersthesis{FONSECA2013,
+  author = {DANIELA ANDRADE COELHO DA FONSECA},
+  title = {O espaço escolar e sua contribuição para o ensino de Língua Estrangeira Moderna: um estudo de caso},
+  school = {UNIVERSIDADE DO OESTE PAULISTA},
+  year = {2013},
+  url = {https://sucupira.capes.gov.br/sucupira/public/consultas/coleta/trabalhoConclusao/viewTrabalhoConclusao.jsf?popup=true&amp;id_trabalho=209907}
+}
+</pre></td>
+</tr>
+<tr id="FREITAS2018" class="entry">
+	<td>FREITAS SRD (2018), <i>"POLÍTICA EDUCACIONAL E AS CONDIÇÕES MATERIAIS E ESTRUTURAIS DAS ESCOLAS MUNICIPAIS DE CURITIBA: UM OLHAR A PARTIR DOS ESTUDANTES VINCULADOS AO PROGRAMA BOLSA FAMÍLIA"</i>. Thesis at: UNIVERSIDADE FEDERAL DO PARANÁ. 
+	<p class="infolinks">[<a href="javascript:toggleInfo('FREITAS2018','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('FREITAS2018','bibtex')">BibTeX</a>] [<a href="https://sucupira.capes.gov.br/sucupira/public/consultas/coleta/trabalhoConclusao/viewTrabalhoConclusao.jsf?popup=true&id_trabalho=6329050" target="_blank">URL</a>]</p>
+	</td>
+</tr>
+<tr id="abs_FREITAS2018" class="abstract noshow">
+	<td><b>Abstract</b>: Este trabalho parte da compreensão que a educação é um dos elementos fundamentais de uma sociedade democrática, por isso, não pode ser distribuída e apropriada de maneira desigual, pois, acaba reproduzindo privilégios e discriminação de diversas naturezas. Nesse sentido, os elementos para a materialização da política educacional precisam ser distribuídos e apropriados, segundo princípios que possibilitem que os desfavorecidos alcancem condições mais justas possíveis para o acesso e permanência no sistema educacional (YANNOULAS, 2013). Como os elementos da política educacional são amplos, este estudo optou por analisar a infraestrutura escolar que, com base em Schneider (2010; 2014), se refere às Condições Materiais e Estruturais (CME) das escolas e são compreendidas como a expressão da ação (ou omissão) do Estado. Dessa forma, compreende-se que a distribuição dos elementos constitutivos das CME precisa pautar-se pelo princípio de justiça como equidade que tem a finalidade de promover iguais condições educacionais para todos (RAWLS, 2002). No sentido de verificar se as ações do Poder Público tem considerando o perfil dos estudantes e assegurado uma oferta justa de CME para acesso e permanência de todos, este estudo buscou, a partir do recorte da concentração de alunos vinculados ao Programa Bolsa Família (PBF), medir as CME das escolas dos anos iniciais do Ensino Fundamental da Rede Municipal de Curitiba (RMC) nos anos de 2011, 2013 e 2015. O recorte temporal teve a intenção de captar o movimento das políticas referente às CME e verificar de que forma elas manifestavam-se nesse período no conjunto de escolas. Para isso, com base na metodologia desenvolvida por Schneider (2010) utilizaram-se os dados disponibilizados pelo Instituto Nacional de Estudos e Pesquisas Educacionais Anísio Teixeira, da Prova Brasil e o Censo escolar, bem como os dados do Ministério da Educação, referentes ao Sistema Presença. A partir desses dados os indicadores e o índice desenvolvidos por Schneider (2010) foram reelaborados de forma a abranger melhor as características da rede analisada. A partir disso, foi possível constatar que na RMC não há uma relação direta entre maior e menor concentração de estudantes em condições de pobreza com piores e melhores CME. Ainda que existam diferenças entre as CME das escolas elas são marcadas por outros elementos que não se relacionam diretamente com as condições de pobreza dos estudantes. Assim, compreende-se que existem outros fatores da política que se pautam pelo princípio da diferença e contribuem para que as escolas da RMC apresentem boas CME.</td>
+</tr>
+<tr id="bib_FREITAS2018" class="bibtex noshow">
+<td><b>BibTeX</b>:
+<pre>
+@mastersthesis{FREITAS2018,
+  author = {SUELLEM RAQUEL DE FREITAS},
+  title = {POLÍTICA EDUCACIONAL E AS CONDIÇÕES MATERIAIS E ESTRUTURAIS DAS ESCOLAS MUNICIPAIS DE CURITIBA: UM OLHAR A PARTIR DOS ESTUDANTES VINCULADOS AO PROGRAMA BOLSA FAMÍLIA},
+  school = {UNIVERSIDADE FEDERAL DO PARANÁ},
+  year = {2018},
+  url = {https://sucupira.capes.gov.br/sucupira/public/consultas/coleta/trabalhoConclusao/viewTrabalhoConclusao.jsf?popup=true&amp;id_trabalho=6329050}
+}
+</pre></td>
+</tr>
+<tr id="Garcia2017" class="entry">
+	<td>Garcia P, Garrido E and Marconi J (2017), <i>"UM ESTUDO SOBRE DA INFRAESTRUTURA DA EDUCAÇÃO INFANTIL DA REGIÃO DO GRANDE ABC PAULISTA"</i>, HOLOS. Natal  Vol. 33(1), pp. 139-154. Instituto Federal de Educacao Ciencia e Tecnologia do Rio Grande do Norte.
+	<p class="infolinks">[<a href="javascript:toggleInfo('Garcia2017','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('Garcia2017','bibtex')">BibTeX</a>] [<a href="http://search.proquest.com/docview/1929693184/" target="_blank">URL</a>]</p>
+	</td>
+</tr>
+<tr id="abs_Garcia2017" class="abstract noshow">
+	<td><b>Abstract</b>: ABSTRACT The school infrastructure house, sustains and enables the creation and the organization of school learning environments for the development of children in Early Childhood Education. School infrastructure, Early Childhood Education, Learning environments, Social discrimination. 1.INTRODUÇAO A infraestrutura escolar (IE) incluí as instalaçöes (salas de aula, laboratórios, biblioteca, entre outros), os equipamentos (computadores, TV, Vídeo, entre outros) e materiais (livros, jornais, bonecas, carrinhos, entre outros). Em relaçao ao número de escolas e matriculas da Educaçao Infantil dos sete municipios, os Quadros 02 e 03 sintetizam as informaçöes: A regiao do grande ABC possuia, de acordo com o Censo Escolar de 2015, 356 escolas de Educaçao Infantil, sendo que o municipio de Sao Bernardo era aquele com o mais número de instituiçöes de ensino e Rio Grande da Serra o menor. San Diego: Annual Meeting of the American Educational Research Association, 2004.</td>
+</tr>
+<tr id="bib_Garcia2017" class="bibtex noshow">
+<td><b>BibTeX</b>:
+<pre>
+@article{Garcia2017,
+  author = {Garcia, P and Garrido, E and Marconi, J},
+  title = {UM ESTUDO SOBRE DA INFRAESTRUTURA DA EDUCAÇÃO INFANTIL DA REGIÃO DO GRANDE ABC PAULISTA},
+  journal = {HOLOS},
+  publisher = {Instituto Federal de Educacao Ciencia e Tecnologia do Rio Grande do Norte},
+  year = {2017},
+  volume = {33},
+  number = {1},
+  pages = {139--154},
+  url = {http://search.proquest.com/docview/1929693184/}
+}
+</pre></td>
+</tr>
+<tr id="KASPER2013" class="entry">
+	<td>KASPER ADA (2013), <i>"Sistema Norteador para Projetos Interativos (SINPI): Abordagem da Percepção Espacial, da Arquitetura Escolar Inclusiva e da Usabilidade Orientada para a Interação Espacial de Alunos com Restrições Visuais"</i>. Thesis at: UNIVERSIDADE FEDERAL DE SANTA CATARINA. 
+	<p class="infolinks">[<a href="javascript:toggleInfo('KASPER2013','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('KASPER2013','bibtex')">BibTeX</a>] [<a href="https://sucupira.capes.gov.br/sucupira/public/consultas/coleta/trabalhoConclusao/viewTrabalhoConclusao.jsf?popup=true&id_trabalho=146171" target="_blank">URL</a>]</p>
+	</td>
+</tr>
+<tr id="abs_KASPER2013" class="abstract noshow">
+	<td><b>Abstract</b>: Esta pesquisa aborda a Interação Espacial, investigada sob a ótica das Interfaces das áreas de Percepção Espacial, Arquitetura Escolar Inclusiva e Usabilidade, visando a construção de um Sistema Norteador para Projetos Interativos Escolares (SINPI). A abrangência da investigação está fundamentada nas áreas citadas e nas especificidades do contexto escolar e de seus usuários, estando focada no espaço físico escolar tratado como um sistema de artefatos, atuando como facilitador das interações entre espaço físico e estudantes com restrições visuais do ensino fundamental. O fenômeno, Interação Espacial de Alunos com Restrições Visuais, é investigado, sob a ótica do espaço físico abrangendo a interdependência e influências dos elementos que compõem as três áreas investigadas: suas dimensões, Interfaces e impactos de projetos. Estes foram levantados e reestruturados adotando uma abordagem sistêmica, por meio de técnicas de pesquisa, tais como, a análise de conteúdo e do conceito, aplicadas seguindo as orientações propostas pelo Design de Interação. Considerando as dimensões comuns da tríade, Percepção Espacial, Arquitetura Escolar Inclusiva e Usabilidade, o SINPI contempla um conjunto de diretrizes (Interfaces) aplicáveis a diferentes contextos escolares, ressalvando elementos passíveis de alcançar dois níveis de interações: entre usuário-ambiente e entre artefato-artefato. O SINPI consiste em uma relevante ferramenta teórico-conceitual e pode ser aplicada por profissionais e pesquisadores de diferentes áreas para apoiar o desenvolvimento de projetos de espaços físicos interativos escolares. Esses espaços, além de serem, essencialmente, inclusivos e fundamentados em princípios ergonômicos, buscam atender às necessidades para a performance independente de seus usuários, considerando o acesso, o uso, a percepção, o entendimento e a apropriação do arranjo espacial escolar, favorecendo o desenvolvimento global dos alunos em geral e daqueles que possuem restrições visuais.</td>
+</tr>
+<tr id="bib_KASPER2013" class="bibtex noshow">
+<td><b>BibTeX</b>:
+<pre>
+@phdthesis{KASPER2013,
+  author = {ANDREA DE AGUIAR KASPER},
+  title = {Sistema Norteador para Projetos Interativos (SINPI): Abordagem da Percepção Espacial, da Arquitetura Escolar Inclusiva e da Usabilidade Orientada para a Interação Espacial de Alunos com Restrições Visuais},
+  school = {UNIVERSIDADE FEDERAL DE SANTA CATARINA},
+  year = {2013},
+  url = {https://sucupira.capes.gov.br/sucupira/public/consultas/coleta/trabalhoConclusao/viewTrabalhoConclusao.jsf?popup=true&amp;id_trabalho=146171}
+}
+</pre></td>
+</tr>
+<tr id="MARIANO2016" class="entry">
+	<td>MARIANO P (2016), <i>"A gestão da educação pública no Timor-Leste: Um estudo sobre o ensino secundário no município de Díli."</i>. Thesis at: UNIVERSIDADE FEDERAL DE SANTA CATARINA. 
+	<p class="infolinks">[<a href="javascript:toggleInfo('MARIANO2016','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('MARIANO2016','bibtex')">BibTeX</a>] [<a href="https://sucupira.capes.gov.br/sucupira/public/consultas/coleta/trabalhoConclusao/viewTrabalhoConclusao.jsf?popup=true&id_trabalho=3879895" target="_blank">URL</a>]</p>
+	</td>
+</tr>
+<tr id="abs_MARIANO2016" class="abstract noshow">
+	<td><b>Abstract</b>: A educação, em diversos países, representa um importante pilar da sociedade para se alcançar o pleno desenvolvimento social, econômico e humano. Isto não é diferente para na República Democrática do Timor-Leste. Um pequeno país do sudeste asiático, que considera a educação como um processo de extrema importância para a o fortalecimento de seu povo e de sua nação. Esta pesquisa é um estudo sobre a gestão da educação pública secundária no município de Díli, tendo em vista os princípios de educação democrática e de qualidade, que norteiam as práticas de educação emancipatória. O referencial teórico utilizado recebeu a influência seminal da pedagogia crítica de Paulo Freire, assim como baseou-se no referencial teórico proposto por Fung (2006), que articula três dimensões para avaliar as formas de participação cidadã: seleção dos participantes; comunicação e decisão e; autoridade e poder. Foram analisadas, especificamente, as políticas públicas de educação secundária em programas de formação de professores e de melhoria da infraestrutura escolar. A pesquisa foi empreendida partir da análise de documentos e da coleta de informações no campo empírico, com a realização de entrevistas semiestruturadas e observação não participante. E, por fim, como resultado deste estudo a pesquisa apontou que as políticas públicas referentes à formação de professores e à infraestrutura na educação pública secundária da capital do Timor-Leste são pouco democráticas e centralizadas pelo Ministério da Educação, em todas as dimensões analisadas.</td>
+</tr>
+<tr id="bib_MARIANO2016" class="bibtex noshow">
+<td><b>BibTeX</b>:
+<pre>
+@mastersthesis{MARIANO2016,
+  author = {PAULO MARIANO},
+  title = {A gestão da educação pública no Timor-Leste: Um estudo sobre o ensino secundário no município de Díli.},
+  school = {UNIVERSIDADE FEDERAL DE SANTA CATARINA},
+  year = {2016},
+  url = {https://sucupira.capes.gov.br/sucupira/public/consultas/coleta/trabalhoConclusao/viewTrabalhoConclusao.jsf?popup=true&amp;id_trabalho=3879895}
+}
+</pre></td>
+</tr>
+<tr id="MARQUES2010" class="entry">
+	<td>MARQUES GFC (2010), <i>"AS CONDIÇÕES DO TRABALHO DOCENTE E O PROCESSO ENSINO-APRENDIZAGEM NOS ANOS INICIAIS DO ENSINO FUNDAMENTAL"</i>. Thesis at: UNIVERSIDADE FEDERAL DE JUIZ DE FORA. 
+	<p class="infolinks">[<a href="javascript:toggleInfo('MARQUES2010','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('MARQUES2010','bibtex')">BibTeX</a>] [<a href="https://www.google.com/url?sa=t&rct=j&q=&esrc=s&source=web&cd=1&cad=rja&uact=8&ved=2ahUKEwjHoM3M0d3dAhXGj5AKHac2ADAQFjAAegQICRAC&url=http%3A%2F%2Fwww.ufjf.br%2Fppge%2Ffiles%2F2010%2F07%2FDisserta%25C3%25A7%25C3%25A3o-Final.pdf&usg=AOvVaw09cf9CVpREbFjCwEqHYQCu" target="_blank">URL</a>]</p>
+	</td>
+</tr>
+<tr id="abs_MARQUES2010" class="abstract noshow">
+	<td><b>Abstract</b>: Esta dissertação tem como objetivo principal investigar as condições do trabalho docente e sua interferência no processo ensino-aprendizagem nos anos iniciais do Ensino Fundamental. Como perspectiva metodológica optou-se pela concepção filosófica do Realismo Crítico, tendo por base alguns de seus princípios, segundo os quais se compreende o processo de pesquisa como uma busca contínua de fatores que se relacionam internamente e sustentam os fenômenos analisados, indo além das aparências observadas. Para o alcance do objetivo central, realizou-se inicialmente um levantamento da produção de estudos referentes ao trabalho docente e às condições de trabalho do professor a partir da década de 1990 no Brasil e na América Latina. Apesar da pouca produção de estudos que aprofundem mais o tema central, encontraram-se referências importantes que o abordavam em relação a aspectos fundamentais como à qualidade do ensino e a saúde docente. Podem ser citados, entre outros, os estudos de Tardif e Lessard; Campos e Körner; Codo; Sampaio e Marim. Também se destacam trabalhos organizados por diversos órgãos, tais como INEP, UNESCO e CNTE. Empenhou-se também na busca de uma organização e reflexão acerca das concepções relacionadas ao conceito de trabalho e profissão docente, analisando como elas se inserem no contexto atual e que repercussões apresentam no cotidiano escolar. Neste campo podem ser citados os trabalhos de Nóvoa,, Costa, Villela, Gadotti; Viannna. Com o propósito de articular o campo teórico do empírico, esse estudo também baseou-se em três fontes de dados. A primeira refere-se a dados primários, levantados no âmbito desse estudo, através de entrevistas semiestruturadas. As entrevistas foram realizadas com professor e coordenador de duas escolas de Juiz de Fora, (uma da rede estadual de ensino e outra da rede municipal) e com uma representante sindical de cada rede de ensino. As outras duas fontes são secundárias e referem-se respectivamente à pesquisa interinstitucional e ao Censo Escolar. Na pesquisa interinstitucional, analisaram-se questões relacionadas às condições de trabalho docente, que pudessem oferecer uma dimensão diferenciada aos assuntos abordados. Através do trabalho com o Censo Escolar, buscou-se enriquecer as análises sobre a relação entre infraestrutura escolar e qualidade do ensino. Os resultados obtidos com a realização desse estudo indicam a importância das condições de trabalho para o bom desenvolvimento do processo ensino-aprendizagem. No âmbito escolar, destacam-se as questões referentes à gestão escolar, número de alunos em sala, violência do entorno social e utilização de recursos e equipamentos escolares. Nos aspectos relacionados à carreira docente destacam-se o vínculo empregatício e o plano de carreira. Além de o processo ensino- aprendizagem sofrer interferência das condições de trabalho do professor, observou-se que a saúde docente, condição primeira para a efetivação do trabalho, não pode ser desvinculada das discussões relacionadas à qualidade do processo escolar.</td>
+</tr>
+<tr id="bib_MARQUES2010" class="bibtex noshow">
+<td><b>BibTeX</b>:
+<pre>
+@mastersthesis{MARQUES2010,
+  author = {GLÁUCIA FABRI CARNEIRO MARQUES},
+  title = {AS CONDIÇÕES DO TRABALHO DOCENTE E O PROCESSO ENSINO-APRENDIZAGEM NOS ANOS INICIAIS DO ENSINO FUNDAMENTAL},
+  school = {UNIVERSIDADE FEDERAL DE JUIZ DE FORA},
+  year = {2010},
+  url = {https://www.google.com/url?sa=t&amp;rct=j&amp;q=&amp;esrc=s&amp;source=web&amp;cd=1&amp;cad=rja&amp;uact=8&amp;ved=2ahUKEwjHoM3M0d3dAhXGj5AKHac2ADAQFjAAegQICRAC&amp;url=http%3A%2F%2Fwww.ufjf.br%2Fppge%2Ffiles%2F2010%2F07%2FDisserta%25C3%25A7%25C3%25A3o-Final.pdf&amp;usg=AOvVaw09cf9CVpREbFjCwEqHYQCu}
+}
+</pre></td>
+</tr>
+<tr id="MENDES2018" class="entry">
+	<td>MENDES CS (2018), <i>"ANÁLISE DAS CONDIÇÕES DE ACESSIBILIDADE EM EQUIPAMENTOS PÚBLICOS EDUCACIONAIS NO MUNICÍPIO DE PASSOS – MG"</i>. Thesis at: UNIVERSIDADE ESTADUAL PAULISTA JÚLIO DE MESQUITA FILHO ( FRANCA ). 
+	<p class="infolinks">[<a href="javascript:toggleInfo('MENDES2018','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('MENDES2018','bibtex')">BibTeX</a>] [<a href="https://sucupira.capes.gov.br/sucupira/public/consultas/coleta/trabalhoConclusao/viewTrabalhoConclusao.jsf?popup=true&id_trabalho=5471915" target="_blank">URL</a>]</p>
+	</td>
+</tr>
+<tr id="abs_MENDES2018" class="abstract noshow">
+	<td><b>Abstract</b>: A implantação de uma política pública visa o tratamento ou a resolução de um problema público coletivamente relevante. As políticas de acessibilidade vêm ganhando destaque, pois facilitam o acesso de pessoas com algum tipo de limitação física a áreas de uso público e espaços de cultura, lazer, trabalho, com independência e vontade própria. Diversas bases legais foram instituídas para garantir esse direito, como a Constituição Federal de 1988, as Leis 10.098/2000 e 13.146/2015, o Decreto 5.296/2004 entre outras, porém ainda não são integralmente cumpridas por diversos órgãos públicos. A Norma Técnica Brasileira NBR 9050/2015, editada pela ABNT (Associação Brasileira de Normas Técnicas), é apresentada como fonte de orientação para acessibilidade em edificações na construção ou reforma. De acordo com o IBGE (2010), 23,9% da população brasileira possui algum tipo de deficiência e as maiores prevalências são as visuais e físicas (motoras). Este trabalho justifica-se pela relevância do tema e a importância no sentido de garantir a esse público o acesso adequado aos prédios públicos e de uso coletivo, especificamente o acesso à educação. Portanto, este estudo pautou-se na análise das situações de acessibilidade em três escolas públicas da cidade de Passos-MG e seu entorno, das diferentes esferas governamentais (municipal, estadual e federal), propondo adequações a partir de métodos e técnicas estabelecidas nas normas e legislação vigente. Para tanto, utilizou-se de metodologia descritiva (BARROS e LEHFELD, 2007), por meio de levantamento bibliográfico e documental sobre o tema, principalmente os marcos legais e documentos oficiais; a criação de um instrumento de avaliação; a pesquisa de campo, que inclui fotografias e medições; a análise dos dados levantados e a proposição de soluções. A análise dos dados foi realizada comparando-os com as normas técnicas vigentes, principalmente a NBR-9050/2015. Como resultado, foi produzido um relatório de como cada escola trata a questão da acessibilidade. O instrumento de avaliação construído para o desenvolvimento desse trabalho, pode ser utilizado pela Prefeitura Municipal de Passos, bem como por outros órgãos fiscalizadores na aprovação de novas obras.</td>
+</tr>
+<tr id="bib_MENDES2018" class="bibtex noshow">
+<td><b>BibTeX</b>:
+<pre>
+@mastersthesis{MENDES2018,
+  author = {CLAYTON SILVA MENDES},
+  title = {ANÁLISE DAS CONDIÇÕES DE ACESSIBILIDADE EM EQUIPAMENTOS PÚBLICOS EDUCACIONAIS NO MUNICÍPIO DE PASSOS – MG},
+  school = {UNIVERSIDADE ESTADUAL PAULISTA JÚLIO DE MESQUITA FILHO ( FRANCA )},
+  year = {2018},
+  url = {https://sucupira.capes.gov.br/sucupira/public/consultas/coleta/trabalhoConclusao/viewTrabalhoConclusao.jsf?popup=true&amp;id_trabalho=5471915}
+}
+</pre></td>
+</tr>
+<tr id="Miranda2010" class="entry">
+	<td>Miranda AC (2010), <i>"A visão dos gestores escolares sobre a influência do FUNDEF/FUNDEB na qualidade da educação ofertada pela rede municipal de ensino de Viçosa-MG"</i>. Thesis at: Universidade Federal de Viçosa. 
+	<p class="infolinks">[<a href="javascript:toggleInfo('Miranda2010','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('Miranda2010','bibtex')">BibTeX</a>] [<a href="http://locus.ufv.br/handle/123456789/1940" target="_blank">URL</a>]</p>
+	</td>
+</tr>
+<tr id="abs_Miranda2010" class="abstract noshow">
+	<td><b>Abstract</b>: O objetivo desta pesquisa é avaliar a percepção dos gestores escolares sobre as políticas de financiamento da educação, tomando-se por base a implantação do FUNDEF e posteriormente do FUNDEB na qualidade da educação ofertada pela Rede Municipal de Educação de Viçosa-MG. Para tanto foi feito um levantamento documental em sites oficiais e documentos impressos sobre o que é educação de qualidade para os formuladores das políticas públicas e posteriormente uma contraposição com o mesmo conceito emitido pelos gestores das escolas que compõem a Rede Municipal de Educação do município através da aplicação de questionários e entrevistas. Para efeito deste trabalho serão analisados os seguintes indicadores: formação e condições de trabalho dos profissionais da escola; espaço físico escolar e acesso e permanência dos alunos na escola. A opção por estes indicadores deve-se ao fato destes serem contemplados nas leis de criação dos fundos anteriormente citados.</td>
+</tr>
+<tr id="bib_Miranda2010" class="bibtex noshow">
+<td><b>BibTeX</b>:
+<pre>
+@mastersthesis{Miranda2010,
+  author = {Antônio Carlos Miranda},
+  title = {A visão dos gestores escolares sobre a influência do FUNDEF/FUNDEB na qualidade da educação ofertada pela rede municipal de ensino de Viçosa-MG},
+  school = {Universidade Federal de Viçosa},
+  year = {2010},
+  url = {http://locus.ufv.br/handle/123456789/1940}
+}
+</pre></td>
+</tr>
+<tr id="MONTEIRO2016" class="entry">
+	<td>MONTEIRO ES (2016), <i>"A IMPLEMENTAÇÃO DO PROGRAMA MAIS EDUCAÇÃO NO MUNICÍPIO DE DOURADOS-MS: CONCEPÇÕES E PRÁTICAS"</i>. Thesis at: UNIVERSIDADE FEDERAL DA GRANDE DOURADOS. 
+	<p class="infolinks">[<a href="javascript:toggleInfo('MONTEIRO2016','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('MONTEIRO2016','bibtex')">BibTeX</a>] [<a href="https://sucupira.capes.gov.br/sucupira/public/consultas/coleta/trabalhoConclusao/viewTrabalhoConclusao.jsf?popup=true&id_trabalho=3617929" target="_blank">URL</a>]</p>
+	</td>
+</tr>
+<tr id="abs_MONTEIRO2016" class="abstract noshow">
+	<td><b>Abstract</b>: Esta pesquisa tem como objetivo analisar o processo de implementação do Programa Mais Educação na rede municipal pública de Dourados-MS, no período compreendido entre 2009 e 2015, com vistas a identificar e discutir a concepção de educação de tempo integral explicitada nesse processo. Para tanto, realiza-se pesquisa de natureza qualitativa, tendo como campo empírico as 45 escolas públicas municipais de Dourados – MS. Como instrumento de coleta de dados a aplica-se questionário junto aos integrantes do Programa Mais Educação no âmbito escolar (professores comunitários e monitores), que são responsáveis pelo acompanhamento das ações do referido programa. Inicialmente, realiza-se estudos documentais a partir do levantamento e análises da legislação vigente - leis, resoluções, decretos, portarias - e da literatura atual que trata da educação integral. Num segundo momento, analisa-se o processo de implementação do Programa no Brasil e no município de Dourados – MS e, por conseguinte, confrontam-se os direcionamentos político-normativo com os dados apontados na presente pesquisa. Em relação aos aspectos positivos do Programa, a análise indica que houve aumento no número de alunos aprovados, redução no número de evasão/abandono dos estudantes, diminuição da indisciplina e melhoria nos relacionamentos interpessoais no ambiente escolar; em relação aos aspectos negativos, são apontados como desafios a questão da infraestrutura escolar, isto é, a falta de espaço físico para desenvolvimento das atividades e a desistência de monitores devido ao baixo retorno financeiro recebido na atuação junto ao Programa. Os dados indicam que apesar dos desafios enfrentados pelas escolas, o Programa Mais Educação tem contribuído para o processo de ensino e aprendizagem dos alunos nas escolas municipais púbicas de Dourados – MS. Por fim, no tocante à concepção de educação integral dos sujeitos participantes da pesquisa, os resultados apontam três diferentes vertentes, a saber: ampliação da jornada escolar, concepção assistencialista e de formação integral do ser humano. Constata-se que, para a maioria dos sujeitos a concepção de educação integral presente no Programa Mais Educação está relacionada à questão da ampliação da jornada escolar; consequentemente, tal concepção está em consonância com a proposta preconizada pelo Programa que considera como educação integral, além de outros fatores, a jornada escolar com duração igual ou superior a sete horas diárias.</td>
+</tr>
+<tr id="bib_MONTEIRO2016" class="bibtex noshow">
+<td><b>BibTeX</b>:
+<pre>
+@mastersthesis{MONTEIRO2016,
+  author = {ESPEDITO SARAIVA MONTEIRO},
+  title = {A IMPLEMENTAÇÃO DO PROGRAMA MAIS EDUCAÇÃO NO MUNICÍPIO DE DOURADOS-MS: CONCEPÇÕES E PRÁTICAS},
+  school = {UNIVERSIDADE FEDERAL DA GRANDE DOURADOS},
+  year = {2016},
+  url = {https://sucupira.capes.gov.br/sucupira/public/consultas/coleta/trabalhoConclusao/viewTrabalhoConclusao.jsf?popup=true&amp;id_trabalho=3617929}
+}
+</pre></td>
+</tr>
+<tr id="MORAES2014" class="entry">
+	<td>MORAES MFD (2014), <i>"A INFLUÊNCIA DA INFRAESTRUTURA NO DESEMPENHO ESCOLAR: ESTUDO DE CASO DE TRÊS COLÁGIOS DO ESTADO DO RIO DE JANEIRO"</i>. Thesis at: UNIVERSIDADE FEDERAL DE JUIZ DE FORA. 
+	<p class="infolinks">[<a href="javascript:toggleInfo('MORAES2014','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('MORAES2014','bibtex')">BibTeX</a>] [<a href="https://sucupira.capes.gov.br/sucupira/public/consultas/coleta/trabalhoConclusao/viewTrabalhoConclusao.jsf?popup=true&id_trabalho=1741838" target="_blank">URL</a>]</p>
+	</td>
+</tr>
+<tr id="abs_MORAES2014" class="abstract noshow">
+	<td><b>Abstract</b>: O presente trabalho problematiza o modo como a esfera administrativa, especificamente em suas questões relacionadas à gestão da infraestrutura, pode influenciar o desempenho dos alunos. Para tanto, foram selecionados três colégios da Regional Serrana II, pertencentes à rede estadual de ensino do Estado do Rio de Janeiro, com o objetivo de identificar os possíveis problemas na infraestrutura escolar, em seus aspectos físico, material e humano e referenciar as ações que a Secretaria Estadual de Educação do Rio de Janeiro (SEEDUC/RJ)podeagregar às suaspráticas administrativas escolares para oferecer condições mais adequadas ao melhor desempenho educacional. Com este objetivo, descreveu-se e analisou-se a dimensão da gestão da SEEDUC/RJ, e, mais detalhadamente a Regional Serrana II, discorrendo sobre a infraestrutura e desempenho educacional das três unidades escolares selecionadas para análise.Além disso, traçou-se o perfil das comunidades escolares em que estão inseridasestes colégios, com o intuito de diagnosticar o grau de conhecimento, envolvimento e apropriação da gestão de cada unidade escolar. Posteriormente, definiu-se como campo de estudo, três unidades de ensino com a mesma classificação utilizada pela SEEDUC/RJ, no que diz respeito a quantidade de alunos e estabeleceu-se como critério, colégios sediados em municípios diferentes, para comparar o desempenho de cada unidade escolar nas avaliações IDEB e IDERJ com a infraestrutura disponível. A metodologia utilizada foi a pesquisa de campo associada à aplicação de cem questionários entre os gestores, professores, alunos e profissionais terceirizados. Para embasar a pesquisa amparou-se nos instrumentos legais que garantem a educação de qualidade como direito fundamental para proteger a dignidade do indivíduo, tal como a LBD 9394/96, bem como o Parecer CNENo. 08/2009 - que define o Custo Aluno Qualidade Inicial(CAQi) - por ser o único documento com discriminação referencial de infraestrutura escolar, para comparar com a estrutura disponível nos colégios investigados. Para fundamentar a análise conceitual, apoiou-se principalmente em literatura voltada aos pilares de eficiência, eficácia, efetividade e equidade escolar, tal como descrito por Filho (1997); Brooke (2012), Franco e Bonamino (2005) além de Anísio Teixeira, pioneiro a mencionara importância da infraestrutura ideal para (instalações e equipamentos necessários) para eficiência do ensino aprendizagem e Polon (2009) que cria a tipologia de estilos de gestão, onde se constata perfis de liderança que determinam diferentes resultados nas escolas. Após relacionar as teorias estudadas com os dados coletados, pode-se propor um Plano de Ação Educacional (PAE) para a melhoria da infraestrutura das unidades escolares da Regional Serrana II, ressaltando a relevância da gestão escolar.</td>
+</tr>
+<tr id="bib_MORAES2014" class="bibtex noshow">
+<td><b>BibTeX</b>:
+<pre>
+@mastersthesis{MORAES2014,
+  author = {MONICA FIGUEIREDO DE MORAES},
+  title = {A INFLUÊNCIA DA INFRAESTRUTURA NO DESEMPENHO ESCOLAR: ESTUDO DE CASO DE TRÊS COLÁGIOS DO ESTADO DO RIO DE JANEIRO},
+  school = {UNIVERSIDADE FEDERAL DE JUIZ DE FORA},
+  year = {2014},
+  url = {https://sucupira.capes.gov.br/sucupira/public/consultas/coleta/trabalhoConclusao/viewTrabalhoConclusao.jsf?popup=true&amp;id_trabalho=1741838}
+}
+</pre></td>
+</tr>
+<tr id="MORIMOTO2017" class="entry">
+	<td>MORIMOTO RM (2017), <i>"ANÁLISE DO ESPAÇO CONSTRUÍDO DA REDE DE EDUCAÇÃO INFANTIL NO MUNICÍPIO DE CAMBORIÚ/SC ATRAVÉS DO MÉTODO AHP"</i>. Thesis at: UNIVERSIDADE DO ESTADO DE SANTA CATARINA. 
+	<p class="infolinks">[<a href="javascript:toggleInfo('MORIMOTO2017','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('MORIMOTO2017','bibtex')">BibTeX</a>] [<a href="https://sucupira.capes.gov.br/sucupira/public/consultas/coleta/trabalhoConclusao/viewTrabalhoConclusao.jsf?popup=true&id_trabalho=5829496" target="_blank">URL</a>]</p>
+	</td>
+</tr>
+<tr id="abs_MORIMOTO2017" class="abstract noshow">
+	<td><b>Abstract</b>: A proposta de pesquisa se estrutura na caracterização e investigação do espaço construído dos Centros de Educação Infantil - CEI e seu entorno imediato, utilizando como parâmetro de análise da qualidade da sua infraestrutura, o estabelecido pelo PROINFANCIA. A desatualização e até mesmo a ausência de um levantamento de dados temporal e avaliações sistemáticas, bem como mapeamentos confiáveis caracterizam-se na realidade da maioria dos municípios brasileiros, o que ocasiona uma deficiência na gestão de qualidade dos CEIs. Este fato não é diferente no Município de Camboriú/SC, cidade objeto de estudo e onde será aplicada a metodologia de pesquisa proposta para avaliar a situação dos CEIs locais. Como referencial teórico apresenta-se definições no campo do planejamento e gestão territorial, estruturação urbana, gestão escolar pública eficiente e a análise multicritério de apoio à tomada de decisão, além dos parâmetros pré-estabelecidos. Para classificar a qualidade da infraestrutura dos Centros de Educação Infantil, bem como a escolha de prioridades de intervenções e adequações para atingir um padrão pré- estabelecido, será utilizado o modelo metodológico do Processo Analítico Hierárquico - AHP, juntamente com os recursos do Sistema de Informação Geográfica – SIG. Portanto, será objeto da pesquisa mapear a distribuição espacial das CEIs e a sua concentração bem como o seu comportamento de eficiência/qualidade frente ao que define o PROINFANCIA. Nesse sentido, será realizada a álgebra de mapas temáticos que caracterizem e representem espacialmente a real situação dos indicadores de qualidade das CEIS. Como produto final será hierarquizado a situação da infraestrutura escolar das CEIS sinalizando, a partir de uma avaliação técnica, quais unidades devem ser plenamente redimensionadas, outras adequadas com pequenos ajustes e por fim as unidades que estão atendendo aos cidadãos de modo eficiente. O produto final ira mostrar a condição de cada CEI e sua distribuição espacial, permitindo ao tomador de decisão agir de modo sistemático e otimizado, pautado na eficiência técnica.</td>
+</tr>
+<tr id="bib_MORIMOTO2017" class="bibtex noshow">
+<td><b>BibTeX</b>:
+<pre>
+@mastersthesis{MORIMOTO2017,
+  author = {RODRIGO MEIRINHO MORIMOTO},
+  title = {ANÁLISE DO ESPAÇO CONSTRUÍDO DA REDE DE EDUCAÇÃO INFANTIL NO MUNICÍPIO DE CAMBORIÚ/SC ATRAVÉS DO MÉTODO AHP},
+  school = {UNIVERSIDADE DO ESTADO DE SANTA CATARINA},
+  year = {2017},
+  url = {https://sucupira.capes.gov.br/sucupira/public/consultas/coleta/trabalhoConclusao/viewTrabalhoConclusao.jsf?popup=true&amp;id_trabalho=5829496}
+}
+</pre></td>
+</tr>
+<tr id="OLIVEIRA2017" class="entry">
+	<td>OLIVEIRA DALD (2017), <i>"Análise da consonância dos programas nacionais de educação com os déficits de infraestrutura das escolas públicas do Brasil: possibilidades e desafios à descentralização"</i>. Thesis at: UNIVERSIDADE DE BRASÍLIA. 
+	<p class="infolinks">[<a href="javascript:toggleInfo('OLIVEIRA2017','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('OLIVEIRA2017','bibtex')">BibTeX</a>] [<a href="https://sucupira.capes.gov.br/sucupira/public/consultas/coleta/trabalhoConclusao/viewTrabalhoConclusao.jsf?popup=true&id_trabalho=6084156" target="_blank">URL</a>]</p>
+	</td>
+</tr>
+<tr id="abs_OLIVEIRA2017" class="abstract noshow">
+	<td><b>Abstract</b>: A garantia de padrão mínimo de qualidade e condições de igualdade de acesso e permanência na escola constituem princípios basilares da política educacional brasileira. A despeito de tais diretrizes, ainda se observam condições substancialmente desiguais de funcionamento dos estabelecimentos educacionais. Para mitigar esse quadro, a União deve exercer função redistributiva e supletiva, mediante assistência técnica e financeira aos entes federados. Nesse sentido, situa-se o Programa Dinheiro Direto na Escola (PDDE), que descentraliza recursos às escolas públicas para concorrer com a manutenção e melhoria de sua infraestrutura física e pedagógica dos estabelecimentos. O programa abrange várias ações, mais de 120 mil escolas e montantes da ordem de R$ 2 bilhões por ano. Diante das desiguais condições de infraestrutura das unidades escolares do país, e dos imperativos constitucionais e legais que preconizam condições mais equânimes, levanta-se a seguinte questão: a distribuição de recursos do PDDE e de suas subações tem sido compatível com as condições de infraestrutura dos estabelecimentos de ensino, no sentido de se assegurar padrão mínimo de qualidade de infraestrutura? Após situar a problemática nas discussões em torno da qualidade da educação e descentralização de políticas públicas, procedeu-se à: a) identificação de referenciais de qualidade de infraestrutura escolar para classificação das escolas quanto às suas condições de infraestrutura; b) classificação das escolas, de acordo com seus déficits de instalações físicas, mobiliários e equipamentos, por meio de Análise Fatorial dos dados informados pelas escolas no Sistema PDDE Interativo associados a parâmetros de qualidade de infraestrutura recomendados pela literatura; e c) realização de testes de correlação de Pearson entre os valores per capita transferidos às escolas e seus respectivos déficits de instalações físicas, mobiliários e equipamentos. Além de evidenciar que as condições de infraestrutura física das escolas públicas brasileiras ainda são precárias e desiguais entre as diversas partes do país, os resultados apontam que os valores per capita destinados a essas unidades pelo PDDE e suas subações não guardam qualquer relação com os déficits de infraestrutura dos estabelecimentos educacionais.</td>
+</tr>
+<tr id="bib_OLIVEIRA2017" class="bibtex noshow">
+<td><b>BibTeX</b>:
+<pre>
+@mastersthesis{OLIVEIRA2017,
+  author = {DAVID ANTONIO LUSTOSA DE OLIVEIRA},
+  title = {Análise da consonância dos programas nacionais de educação com os déficits de infraestrutura das escolas públicas do Brasil: possibilidades e desafios à descentralização},
+  school = {UNIVERSIDADE DE BRASÍLIA},
+  year = {2017},
+  url = {https://sucupira.capes.gov.br/sucupira/public/consultas/coleta/trabalhoConclusao/viewTrabalhoConclusao.jsf?popup=true&amp;id_trabalho=6084156}
+}
+</pre></td>
+</tr>
+<tr id="Ormond2015" class="entry">
+	<td>Ormond MRE (2015), <i>"Retratos da estrutura física escolar e suas implicações no atendimento de crianças da educação infantil"</i>, Eventos Pedagógicos., November, 2015.  Vol. 6(4), pp. 232-242. Universidade do Estado de Mato Grosso.
+	<p class="infolinks">[<a href="javascript:toggleInfo('Ormond2015','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('Ormond2015','bibtex')">BibTeX</a>] [<a href="https://doaj.org/article/e528cad11b3b41388def42cda71a2eb3" target="_blank">URL</a>]</p>
+	</td>
+</tr>
+<tr id="abs_Ormond2015" class="abstract noshow">
+	<td><b>Abstract</b>: <p>Este artigo apresenta os resultados de uma investigação realizada no Centro Municipal de Educação Infantil Pequeno Príncipe no município de Sinop - Mato Grosso. O objetivo desta pesquisa foi analisar a estrutura física da escola que funciona em um prédio alugado buscando examinar a organização do espaço físico escolar e as dificuldades encontradas pela instituição em oferecer um atendimento seguro para estas crianças. Conclui-se que a instituição citada apresenta um ambiente de limitações para crianças e professores, com salas de aula pequenas para desenvolver as atividades essenciais para o desenvolvimento intelectual das crianças. Palavras-chave: Educação infantil; estrutura física da escola; atendimento das crianças.</p></td>
+</tr>
+<tr id="bib_Ormond2015" class="bibtex noshow">
+<td><b>BibTeX</b>:
+<pre>
+@article{Ormond2015,
+  author = {Mayane Ribeiro Espinosa Ormond},
+  title = {Retratos da estrutura física escolar e suas implicações no atendimento de crianças da educação infantil},
+  journal = {Eventos Pedagógicos},
+  publisher = {Universidade do Estado de Mato Grosso},
+  year = {2015},
+  volume = {6},
+  number = {4},
+  pages = {232--242},
+  url = {https://doaj.org/article/e528cad11b3b41388def42cda71a2eb3}
+}
+</pre></td>
+</tr>
+<tr id="PETRUS2013" class="entry">
+	<td>PETRUS L (2013), <i>"ANÁLISE DOS IMPACTOS DOS INVESTIMENTOS EM INFRAESTRUTURA ESCOLAR NO DESEMPENHO DAS UNIDADES ESTADUAIS DE ENSINO DE MINAS GERAIS"</i>. Thesis at: UNIVERSIDADE FEDERAL DE JUIZ DE FORA. 
+	<p class="infolinks">[<a href="javascript:toggleInfo('PETRUS2013','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('PETRUS2013','bibtex')">BibTeX</a>] [<a href="https://sucupira.capes.gov.br/sucupira/public/consultas/coleta/trabalhoConclusao/viewTrabalhoConclusao.jsf?popup=true&id_trabalho=615323" target="_blank">URL</a>]</p>
+	</td>
+</tr>
+<tr id="abs_PETRUS2013" class="abstract noshow">
+	<td><b>Abstract</b>: A pesquisa apresentada objetiva avaliar os impactos dos investimentos em infraestrutura escolar nas unidades escolares pertencentes à rede pública de ensino do Estado de Minas Gerais - SEE no desempenho das escolas aferido pelo Índice de Desenvolvimento da Educação Básica - IDEB. Para desenvolver as análises, foram utilizadas quatro extensas bases de dados: 1) investimentos em infraestrutura escolar realizados pela Secretaria de Estado de Educação no período de 2002-2011; 2) Série histórica do Índice de Desenvolvimento da Educação Básica, do período de 2005 a 2011 - INEP/MEC; 3) Situação do diagnóstico de infraestrutura escolar das escolas, período de 2008 a 2011; 4) Censo Escolar de 2011 -INEP/MEC. A partir da caracterização da rede de ensino em estudo e delineação das premissas inerentes ao financiamento da educação pública brasileira e de criação e funcionamento do IDEB, foram realizadas análises utilizando-se os dados analíticos das escolas de anos iniciais e de anos finais do ensino fundamental. Por meio dos tratamentos estatísticos realizados, foram demonstrados os vínculos existentes entre os desempenhos alcançados pelas escolas com o nível de investimentos e condições de infraestrutura escolar, cotejados sempre com o número de alunos atendidos em cada etapa de ensino oferecida. Importantes conclusões são apontadas, em especial quanto à maior probabilidade de escolas que contam com investimentos e infraestrutura escolar adequada configurarem entre as unidades de ensino que alcançam os maiores patamares do IDEB. Da mesma forma, escolas que contam com estruturas não tão favoráveis, têm menores probabilidades de alcançar patamares mais nobres nas escalas do IDEB. Uma proposta inovadora apresentada é a construção de um indicador de efetividade dos investimentos realizados, denominado Índice de Qualidade dos Investimentos em Infraestrutura Escolar - IQIIE, que pretende mensurar em que medida a alocação de recursos diretamente para melhorar as condições existentes nas escolas impacta positivamente na variação do IDEB para o período selecionado. Embora tratar-se de iniciativa desafiadora e merecedora de aperfeiçoamentos, a construção proposta indica novos caminhos para se olhar o desempenho das escolas face aos investimentos em infraestrutura escolar, abrindo novas possibilidades de pesquisa a partir dos impactos mensuráveis na evolução dos indicadores de desempenhos das escolas. Por fim, diante dos achados da pesquisa, é apresentado um Plano de Ação Educacional à Secretaria de Estado de Educação - SEE para sistematizar as decisões de alocação de recursos em infraestrutura escolar, pautado em variáveis concretas que possibilitaram a construção de uma Matriz de Planejamento dos Investimentos em Infraestrutura Escolar, que classifica, de acordo com critérios objetivos e parametrizados, as necessidades existentes de investimentos em uma rede de ensino. Espera-se que a implementação da metodologia constante no Plano de Ação Educacional apresentado gere benefícios reais ao sistema educacional do Estado de Minas Gerais.</td>
+</tr>
+<tr id="bib_PETRUS2013" class="bibtex noshow">
+<td><b>BibTeX</b>:
+<pre>
+@mastersthesis{PETRUS2013,
+  author = {LEONARDO PETRUS},
+  title = {ANÁLISE DOS IMPACTOS DOS INVESTIMENTOS EM INFRAESTRUTURA ESCOLAR NO DESEMPENHO DAS UNIDADES ESTADUAIS DE ENSINO DE MINAS GERAIS},
+  school = {UNIVERSIDADE FEDERAL DE JUIZ DE FORA},
+  year = {2013},
+  url = {https://sucupira.capes.gov.br/sucupira/public/consultas/coleta/trabalhoConclusao/viewTrabalhoConclusao.jsf?popup=true&amp;id_trabalho=615323}
+}
+</pre></td>
+</tr>
+<tr id="RODOPOULOS2017" class="entry">
+	<td>RODOPOULOS ASO (2017), <i>"INFRAESTRUTURA ESCOLAR E FORMAÇÃO: UMA ANÁLISE ACERCA DA CONSCIÊNCIA CINDIDA DOS ESTUDANTES DO ENSINO MÉDIO"</i>. Thesis at: PONTIFÍCIA UNIVERSIDADE CATÓLICA DE SÃO PAULO. 
+	<p class="infolinks">[<a href="javascript:toggleInfo('RODOPOULOS2017','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('RODOPOULOS2017','bibtex')">BibTeX</a>] [<a href="https://sucupira.capes.gov.br/sucupira/public/consultas/coleta/trabalhoConclusao/viewTrabalhoConclusao.jsf?popup=true&id_trabalho=5602749" target="_blank">URL</a>]</p>
+	</td>
+</tr>
+<tr id="abs_RODOPOULOS2017" class="abstract noshow">
+	<td><b>Abstract</b>: A presente pesquisa, de tipo empírico, tem por objeto de estudo as questões relativas à infraestrutura da escola pública como recurso formativo. Considerando que os estudantes são os usuários finais dos equipamentos e instalações escolares e que as condições materiais e estruturais da escola vêm sendo tratadas, nos últimos anos, como um insumo pouco relevante para a experiência educativa – por influência direta dos saberes produzidos pelo Banco Mundial sobre as políticas educacionais brasileiras, ocasionando uma diminuição sistemática dos investimentos nessa área – a pergunta de pesquisa que orientou este trabalho foi: se e que medida as concepções dos estudantes acerca da infraestrutura escolar como recurso formativo encontram-se em alinhamento com as recomendações do Banco Mundial? Posto que a pergunta enseja a relação entre infraestrutura escolar e formação, elaborou-se os objetivos da pesquisa da seguinte maneira: (a) identificar qual o grau de importância que os estudantes atribuem à infraestrutura escolar para a sua formação; e (b) verificar o que os estudantes atribuem ao conceito de formação. Para atingir esses objetivos, tomou-se como fonte as respostas dos alunos obtidas com base em um questionário padronizado aplicado a estudantes de uma escola de ensino técnico (Etec) situada em um município da Grande São Paulo. Os resultados sugerem que os estudantes posicionam-se de maneira mais crítica em relação à infraestrutura como recurso formativo do que ao conceito vigente de formação. Nesse sentido, os jovens parecem reivindicar uma infraesturutra mais robusta e de melhor qualidade porque reconhecem seu potencial formativo. No entanto, não chegam a questionar o conceito de formação restrito à preparação para o mercado de trabalho. O referencial teórico que fundamenta a presente pesquisa é a teoria crítica da sociedade, sobretudo, os estudos desenvolvidos por Herbert Marcuse, Theodor W. Adorno, Max Horkheimer e Walter Benjamnin, especialmente, os que tratam da ideologia da racionalidade tecnológica, da formação e da educação</td>
+</tr>
+<tr id="bib_RODOPOULOS2017" class="bibtex noshow">
+<td><b>BibTeX</b>:
+<pre>
+@mastersthesis{RODOPOULOS2017,
+  author = {ADRIANA SPACCA OLIVARES RODOPOULOS},
+  title = {INFRAESTRUTURA ESCOLAR E FORMAÇÃO: UMA ANÁLISE ACERCA DA CONSCIÊNCIA CINDIDA DOS ESTUDANTES DO ENSINO MÉDIO},
+  school = {PONTIFÍCIA UNIVERSIDADE CATÓLICA DE SÃO PAULO},
+  year = {2017},
+  url = {https://sucupira.capes.gov.br/sucupira/public/consultas/coleta/trabalhoConclusao/viewTrabalhoConclusao.jsf?popup=true&amp;id_trabalho=5602749}
+}
+</pre></td>
+</tr>
+<tr id="RODRIGUES2015" class="entry">
+	<td>RODRIGUES BDCL (2015), <i>"AVALIAÇÃO DO IMPACTO DA UTILIZAÇÃO DE PARCERIA PÚBLICO-PRIVADA PARA A CONSTRUÇÃO E OPERAÇÃO DE UNIDADES MUNICIPAIS DE EDUCAÇÃO INFANTIL EM BELO HORIZONTE RIO DE JANEIRO 2015"</i>. Thesis at: FUNDAÇÃO GETÚLIO VARGAS ( RJ ). 
+	<p class="infolinks">[<a href="javascript:toggleInfo('RODRIGUES2015','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('RODRIGUES2015','bibtex')">BibTeX</a>] [<a href="https://sucupira.capes.gov.br/sucupira/public/consultas/coleta/trabalhoConclusao/viewTrabalhoConclusao.jsf?popup=true&id_trabalho=2914749" target="_blank">URL</a>]</p>
+	</td>
+</tr>
+<tr id="abs_RODRIGUES2015" class="abstract noshow">
+	<td><b>Abstract</b>: As Parcerias Públ i co-Privadas (PPP) de infraestrutura escolar são cada vez mais uti lizadas no mundo, entretanto as avaliações de impacto desse modelo ainda são escassas. O presente estudo contribui para essa área do conhecimento ao avaliar o impacto da utilização de PPP tanto na construção como na operação das Unidades Municipais de Educação Infantil (UMEIs) de Belo Horizonte (BH) . A metodologia de pesquisa foi baseada na comparação de 46 UMEIs, sendo 27 unidades de PPP e 19 unidades construídas e operadas no modelo tradicional de contratação pública. Em relação ao impacto na construção, os principais resultados são que o tempo de obra das unidades de PPP foi 45% menor e que 79% das unidades t radicionai s foram entregues fora do prazo contratado de 13 meses , enquanto que nenhuma PPP foi entregue ac ima deste prazo. Além disso, a PPP permitiu aumentar a es cala na construção das UMEI s, superando as limitações do modelo radicional . Dentre as principais evidências encontradas quanto ao impacto na operação, pode-se c itar que os diretores de unidades de PPP afirmam ter 25% mais tempo para focar nas atividades pedagógicas , pois gastam menos tempo na gestão dos serviços não pedagógicos, e que o grau de satisfação com os serviços de manutenção das instalações físicas é substancialmente maior nessas unidades. Os resultados positivos para PPP só não apareceram em relação aos serviços de manutenção de TI . Uma limitação deste trabalho foi não conseguir realizar a comparação de custos das duas modal idades. O estudo pretende contribui r para o aprimoramento dos modelos regulatórios de PPPs em educação e para a discussão sobre o papel que pode ser desempenhado pelas PPPs na redução do déficit de infraestrutura escolar .</td>
+</tr>
+<tr id="bib_RODRIGUES2015" class="bibtex noshow">
+<td><b>BibTeX</b>:
+<pre>
+@mastersthesis{RODRIGUES2015,
+  author = {BRUNO DA COSTA LUCAS RODRIGUES},
+  title = {AVALIAÇÃO DO IMPACTO DA UTILIZAÇÃO DE PARCERIA PÚBLICO-PRIVADA PARA A CONSTRUÇÃO E OPERAÇÃO DE UNIDADES MUNICIPAIS DE EDUCAÇÃO INFANTIL EM BELO HORIZONTE RIO DE JANEIRO 2015},
+  school = {FUNDAÇÃO GETÚLIO VARGAS ( RJ )},
+  year = {2015},
+  url = {https://sucupira.capes.gov.br/sucupira/public/consultas/coleta/trabalhoConclusao/viewTrabalhoConclusao.jsf?popup=true&amp;id_trabalho=2914749}
+}
+</pre></td>
+</tr>
+<tr id="SCHMIDT2015" class="entry">
+	<td>SCHMIDT JJ (2015), <i>"Estrutura e desempenho escolares: estudo da relação entre fatores na qualidade de Ensino Médio na região de Londrina-Pr"</i>. Thesis at: UNIVERSIDADE ESTADUAL DE LONDRINA. 
+	<p class="infolinks">[<a href="javascript:toggleInfo('SCHMIDT2015','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('SCHMIDT2015','bibtex')">BibTeX</a>] [<a href="https://sucupira.capes.gov.br/sucupira/public/consultas/coleta/trabalhoConclusao/viewTrabalhoConclusao.jsf?popup=true&id_trabalho=2997428" target="_blank">URL</a>]</p>
+	</td>
+</tr>
+<tr id="abs_SCHMIDT2015" class="abstract noshow">
+	<td><b>Abstract</b>: A proposta desta dissertação é a realização de um estudo exploratório da relação entre estrutura escolar, indicadores e desempenhos educacionais, buscando identificar fatores que, combinados, explicam tipos de desempenho no Ensino Médio, a última etapa da Educação Básica. Para isso serão analisados dados do Censo Escolar da Educação Básica sobre a estrutura escolar, os Indicadores Educacionais da Educação Básica e as notas das escolas no Exame Nacional do Ensino Médio, disponibilizados pelo Instituto Nacional de Estudos e Pesquisas Educacionais Anísio Teixeira. O recorte foi feito para escolas do Núcleo regional de Educação de Londrina-Paraná que tiveram os desempenhos no Enem calculados com o requisito de terem pelo menos 10 concluintes do Ensino Médio regular seriado e 50% de alunos participantes desta avaliação, totalizando 58 escolas de 10 cidades. O período é o ano de 2013, pois corresponde aos últimos dados disponíveis quando esta análise começou. O referencial teórico-metodológico tem por base a estruturação, considerando a relação entre elementos objetivos e subjetivos, instituições e atores sociais e a questão da reprodução das desigualdades sociais. A trajetória das pesquisas a respeito da eficácia escolar foi abordada como um referencial e, também, pelos seus resultados. Estes inicialmente mostraram que a escola não faz diferença frente às desigualdades sociais, pois os fatores socioeconômicos seriam mais determinantes. Posteriormente, sem desconsiderar o peso dos fatores socioeconômicos, essas pesquisas caminham para os estudos da eficácia das escolas no processo de ensino e aprendizagem. Nesse percurso os estudos do sistema educacional brasileiro concluem que as escolas são heterogêneas e que isso pode fazer a diferença na trajetória dos estudantes. Os resultados dessa dissertação apontaram maior relevância para os fatores referentes aos atores sociais do que aos da infraestrutura escolar. As análises dos dados selecionados são feitas por meio de análise fatorial exploratória e interpretadas a partir da sociologia da educação, procurando contribuir com as questões que tratam de desigualdades sociais e dos problemas da educação no Brasil, visando um sistema educacional de melhor qualidade</td>
+</tr>
+<tr id="bib_SCHMIDT2015" class="bibtex noshow">
+<td><b>BibTeX</b>:
+<pre>
+@mastersthesis{SCHMIDT2015,
+  author = {JESSICA JOSIANE SCHMIDT},
+  title = {Estrutura e desempenho escolares: estudo da relação entre fatores na qualidade de Ensino Médio na região de Londrina-Pr},
+  school = {UNIVERSIDADE ESTADUAL DE LONDRINA},
+  year = {2015},
+  url = {https://sucupira.capes.gov.br/sucupira/public/consultas/coleta/trabalhoConclusao/viewTrabalhoConclusao.jsf?popup=true&amp;id_trabalho=2997428}
+}
+</pre></td>
+</tr>
+<tr id="SILVA2017" class="entry">
+	<td>SILVA ISD (2017), <i>"O ESPAÇO ESCOLAR NA POLÍTICA EDUCACIONAL: ANÁLISE DA POLÍTICA DE INFRAESTRUTURA ESCOLAR EM PERNAMBUCO"</i>. Thesis at: UNIVERSIDADE FEDERAL DE PERNAMBUCO. 
+	<p class="infolinks">[<a href="javascript:toggleInfo('SILVA2017','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('SILVA2017','bibtex')">BibTeX</a>] [<a href="https://sucupira.capes.gov.br/sucupira/public/consultas/coleta/trabalhoConclusao/viewTrabalhoConclusao.jsf?popup=true&id_trabalho=5185301" target="_blank">URL</a>]</p>
+	</td>
+</tr>
+<tr id="abs_SILVA2017" class="abstract noshow">
+	<td><b>Abstract</b>: Esta pesquisa tem como objeto de estudo as políticas de infraestrutura escolar. Especificamente trata de compreender como este tipo de política vem sendo desenvolvida na rede estadual de educação de Pernambuco. Seu o objetivo geral foi Identificar os percursos e efeitos da política de infraestrutura escolar na rede Estadual de Educação em Pernambuco, no âmbito do programa de Modernização da Gestão, entre 2007 e 2016. A partir disto, desenvolveram-se os seguintes objetivos específicos: mapear as medidas de políticas voltadas para a construção, reforma, adequação, ampliação e manutenção do prédio escolar na rede estadual de ensino em Pernambuco entre 2007 e 2016; identificar os parâmetros utilizados ou levados em consideração na política de infraestrutura das escolas em Pernambuco no referido período; apreender as percepções de diferentes atores no tocante aos efeitos da referida política no âmbito da escola. Dado o seu caráter exploratório, a pesquisa esteve subsidiada pelo estudo da legislação educacional no âmbito nacional e estadual, em especial nas Leis que versam sobre o processo de Gestão Educacional com foco na escola enquanto espaço, território ou ambiente; bem como em documentos realtivos à Projetos e Programas. Além disto, realizamos uma série de consultas à Secretaria de Educação do Estado, por meio das quais pudemos ter acesso a um conjunto de documentos a respeito da temática. Nosso campo empírico reuniu 04 escolas estaduais da cidade do Recife, nas quais realizamos entrevistas semiestruturadas com seus/as gestores/as e aplicamos questionários com 67 estudantes do 9º ano do ensino fundamental e do ensino médio. O estudo revelou a existência de uma política voltada para a infraestrutura escolar estreitamente articulada com o Projeto educacional empreendido pelo governo do estado a partir de 2007; diante disto pudemos inferir que se por um lado há política de infraestrutura escolar e que ela se articula dentro da macropolítica da rede estadual, por outro, ela não tem organicidade interna, na medida em que é um apêndice da política de gestão para resultados e, neste sentido, ocupa um lugar secundário.</td>
+</tr>
+<tr id="bib_SILVA2017" class="bibtex noshow">
+<td><b>BibTeX</b>:
+<pre>
+@mastersthesis{SILVA2017,
+  author = {IVANILSO SANTOS DA SILVA},
+  title = {O ESPAÇO ESCOLAR NA POLÍTICA EDUCACIONAL: ANÁLISE DA POLÍTICA DE INFRAESTRUTURA ESCOLAR EM PERNAMBUCO},
+  school = {UNIVERSIDADE FEDERAL DE PERNAMBUCO},
+  year = {2017},
+  url = {https://sucupira.capes.gov.br/sucupira/public/consultas/coleta/trabalhoConclusao/viewTrabalhoConclusao.jsf?popup=true&amp;id_trabalho=5185301}
+}
+</pre></td>
+</tr>
+<tr id="SOUSA2017" class="entry">
+	<td>SOUSA KC (2017), <i>"Gestão e controle de recursos públicos : um estudo dos mecanismos de controle interno nas obras de infraestrutura no âmbito do FNDE"</i>. Thesis at: UNIVERSIDADE DE BRASÍLIA. 
+	<p class="infolinks">[<a href="javascript:toggleInfo('SOUSA2017','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('SOUSA2017','bibtex')">BibTeX</a>] [<a href="https://sucupira.capes.gov.br/sucupira/public/consultas/coleta/trabalhoConclusao/viewTrabalhoConclusao.jsf?popup=true&id_trabalho=6085014" target="_blank">URL</a>]</p>
+	</td>
+</tr>
+<tr id="abs_SOUSA2017" class="abstract noshow">
+	<td><b>Abstract</b>: A fase de implementação das políticas públicas é o momento no qual se coloca em prática os objetivos estabelecidos pelo governo. É nesse período que os obstáculos, as falhas, as metas mal traçadas, otimismos exagerados são visualizados. E cabe à gestão pública superar esses problemas e cuidar para que os recursos públicos alcancem todo o território nacional. Desta maneira, foram positivadas na Constituição Federal competências privativas e concorrentes para União, estados, Distrito Federal e municípios no tocante à prestação de serviços públicos educacionais. Diante desta determinação o governo federal lançou o Plano de Desenvolvimento da Educação (PDE) com o propósito de fortalecer o regime de colaboração entre os entes federativos. Este plano é composto por programas e ações que visam prestar assistências técnica e financeira, por meio de adesão voluntária ao Plano de Metas Compromisso Todos pela Educação e mediante a elaboração de um Plano de Ações Articuladas (PAR), o qual é dividido em dimensões e identifica as necessidades das entidades. A dimensão infraestrutura física e recursos pedagógicos é constituída pelas obras escolares, foco desta pesquisa. Assim, para maximizar os benefícios a serem obtidos através do financiamento da infraestrutura escolar, faz-se necessário o estabelecimento de um ambiente adequado de controle, com procedimentos capazes de fornecer informações convenientes aos gestores públicos e a sociedade. O que essa dissertação se propôs a fazer foi estudar os mecanismos de controle interno, com foco administrativo, utilizados pelo FNDE durante a implementação das obras de infraestrutura escolar. Adotou-se, então, a estratégia do estudo de caso, utilizando-se de entrevistas, documentos e legislações, para se analisar o controle realizado. Os resultados apontam para um controle realizado por meio de sistemas informatizados com a utilização de rotinas, supervisão, monitoramento, conferências documentais e de informações que já foram aprimoradas e possibilitaram a otimização da gestão e a transparência dos atos, porém precisam ser aperfeiçoadas para demonstrar a real situação das obras escolares.</td>
+</tr>
+<tr id="bib_SOUSA2017" class="bibtex noshow">
+<td><b>BibTeX</b>:
+<pre>
+@mastersthesis{SOUSA2017,
+  author = {KAROLINE CUNHA SOUSA},
+  title = {Gestão e controle de recursos públicos : um estudo dos mecanismos de controle interno nas obras de infraestrutura no âmbito do FNDE},
+  school = {UNIVERSIDADE DE BRASÍLIA},
+  year = {2017},
+  url = {https://sucupira.capes.gov.br/sucupira/public/consultas/coleta/trabalhoConclusao/viewTrabalhoConclusao.jsf?popup=true&amp;id_trabalho=6085014}
+}
+</pre></td>
+</tr>
+<tr id="TovarFalciano2016" class="entry">
+	<td>Tovar Falciano B, Cordeiro dos Santos E and Rezende Nunes MF (2016), <i>"Infraestrutura escolar: um critério de comparação da qualidade na educação infantil"</i>, Estudos em Avaliação Educacional.  Vol. 27(66), pp. 880-906.
+	<p class="infolinks">[<a href="javascript:toggleInfo('TovarFalciano2016','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('TovarFalciano2016','bibtex')">BibTeX</a>] [<a href="https://dialnet.unirioja.es/servlet/oaiart?codigo=5764087" target="_blank">URL</a>]</p>
+	</td>
+</tr>
+<tr id="abs_TovarFalciano2016" class="abstract noshow">
+	<td><b>Abstract</b>: This article aims to suggest a group of indicators useful to analyze in a comparative way the quality of infrastructure of early childhood facilities in the public school system. The challenge we set for ourselves was to answer questions such as: would it be possible to assess the quality of an entire school system? How do we compare different institutions in order to prioritize and maximize the public resources invested? Are there indicators that can be measured objectively and used in any educational environment? The study presents one of many possible answers, proposing quality indicators for checking the infrastructure, which can be applied to all the institutions of child-care education in Brazil, based on the example of two municipalities.</td>
+</tr>
+<tr id="bib_TovarFalciano2016" class="bibtex noshow">
+<td><b>BibTeX</b>:
+<pre>
+@article{TovarFalciano2016,
+  author = {Tovar Falciano, Bruno and Cordeiro dos Santos, Edson and Rezende Nunes, Maria Fernanda},
+  title = {Infraestrutura escolar: um critério de comparação da qualidade na educação infantil},
+  journal = {Estudos em Avaliação Educacional},
+  year = {2016},
+  volume = {27},
+  number = {66},
+  pages = {880--906},
+  url = {https://dialnet.unirioja.es/servlet/oaiart?codigo=5764087}
+}
+</pre></td>
+</tr>
+<tr id="VALENTINI2013" class="entry">
+	<td>VALENTINI F (2013), <i>"A RELAÇÃO ENTRE INTELIGÊNCIA FLUIDA, DESEMPENHO ACADÊMICO E APRENDIZAGEM: UMA ABORDAGEM MULTINÍVEL"</i>. Thesis at: UNIVERSIDADE DE BRASÍLIA. 
+	<p class="infolinks">[<a href="javascript:toggleInfo('VALENTINI2013','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('VALENTINI2013','bibtex')">BibTeX</a>] [<a href="https://sucupira.capes.gov.br/sucupira/public/consultas/coleta/trabalhoConclusao/viewTrabalhoConclusao.jsf?popup=true&id_trabalho=155111" target="_blank">URL</a>]</p>
+	</td>
+</tr>
+<tr id="abs_VALENTINI2013" class="abstract noshow">
+	<td><b>Abstract</b>: A inteligência fluida refere-se à capacidade de solucionar problemas novos, para os quais a pessoa não tem conhecimento prévio. Esse construto psicológico está relacionado à capacidade de aprendizagem e prediz outras variáveis importantes, como desempenho acadêmico e desempenho no trabalho. Contudo, pouco se conhece sobre a influência de variáveis do nível contextual sobre a relação entre a inteligência e os diversos tipos de desempenho. Nesse sentido, esta tese investigou, principalmente, a moderação de variáveis da escola na relação entre a inteligência fluida, o desempenho acadêmico e a aprendizagem. Para tanto, foram conduzidos quatro estudos. O primeiro estudo teve como objetivo revisar criticamente a literatura sobre o tema. No que diz respeito às variáveis do estudante, a revisão apontou, principalmente, para as características de responsabilidade e de autodisciplina na predição do desempenho acadêmico. No que se refere às variáveis contextuais, os recursos da escola e o nível socioeconômico agregado também foram apontados como importantes para a predição do desempenho acadêmico. Entretanto, a revisão indicou a carência de investigações sobre a influência das variáveis contextuais na moderação da relação entre a inteligência, o desempenho acadêmico e a aprendizagem. Para que os modelos teóricos pudessem ser testados empiracamente, buscou-se, primeiramente, nos estudos dois e três, construir um instrumento para a avaliação da inteligência fluida. No segundo estudo buscou-se construir e obter evidências de validade de construto do Teste de Raciocínio Abstrato e Espacial (TRAE). A amostra principal foi composta de 1.069 estudantes do ensino fundamental com idade entre 11 e 17 anos (essa amostra foi selecionada a partir da amostra do quarto estudo). Por meio da Teoria de Resposta ao Item, estimou-se os parâmetros de discriminação (a) e dificuldade (b), cujas médias foram próximas de 1,00 e 0,70, respectivamente. As análises fatoriais sugeriram a adequação de uma estrutura hierárquica que permite estimação de dois fatores de primeira ordem associados ao raciocínio abstrato e ao raciocínio espacial, bem como um fator geral de segunda ordem associado à inteligência fluida. Por meio do terceiro estudo buscou-se evidências de validade convergente entre o TRAE e a Bateria de Provas de Raciocínio (BPR-5). Esses instrumentos foram aplicados em uma amostra de 149 estudantes do ensino médio. Obteve-se evidências de validade convergente do teste TRAE por meio da abordagem multitraço-multimétodo e por meio das correlações entre os instrumentos. Contudo, os resultados indicaram restrições quanto à validade discriminante entre raciocínio abstrato e espacial. Finalmente, o objetivo do quarto estudo foi construir e testar modelos multinível do desempenho acadêmico e da aprendizagem, considerando as variáveis explicativas inteligência fluida (Gf), infraestrutura na escola e nível socioeconômico agregado para a escola (NSEA). Participaram do estudo 1.295 estudantes do ensino fundamental. O modelo simples indicou relação forte entre Gf e desempenho acadêmico. Os modelos multinível apontaram para relação moderada entre a Gf e o desempenho acadêmico, bem como relação moderada entre a Gf e a aprendizagem. A infraestrutura na escola influenciou ambas as relações; o NSEA, apenas a relação entre a Gf e o desempenho acadêmico. Nesse sentido, uma infraestrutura melhor e um NSEA mais alto diminuíram o efeito de Gf sobre o desempenho e a aprendizagem. Esses resultados sugerem que a infraestrutura e o nível socioeconômico da escola reduzem as diferenças do desempenho e da aprendizagem entre os estudantes com baixos e altos escores de inteligência fluida.</td>
+</tr>
+<tr id="bib_VALENTINI2013" class="bibtex noshow">
+<td><b>BibTeX</b>:
+<pre>
+@phdthesis{VALENTINI2013,
+  author = {FELIPE VALENTINI},
+  title = {A RELAÇÃO ENTRE INTELIGÊNCIA FLUIDA, DESEMPENHO ACADÊMICO E APRENDIZAGEM: UMA ABORDAGEM MULTINÍVEL},
+  school = {UNIVERSIDADE DE BRASÍLIA},
+  year = {2013},
+  url = {https://sucupira.capes.gov.br/sucupira/public/consultas/coleta/trabalhoConclusao/viewTrabalhoConclusao.jsf?popup=true&amp;id_trabalho=155111}
+}
+</pre></td>
+</tr>
+</tbody>
+</table>
+<footer>
+ <small>Created by <a href="http://jabref.sourceforge.net">JabRef</a> on 03/10/2018.</small>
+</footer>
+<!-- file generated by JabRef -->
+</body>
+</html>
